@@ -141,6 +141,9 @@ export class Grid {
     cachePath = path.join(process.cwd(), 'cache')
   } : DownloadOptions = {}) : Promise<string> {
     const config = await this._getClientConfig(clientName)
+    if(!fs.existsSync(cachePath)) {
+      fs.mkdirSync(cachePath, { recursive: true })
+    }
     platform = normalizePlatform(platform)
     const pkg = await this._packageManager.getPackage(config.repository, {
       prefix: config.prefix, // server-side filter based on string prefix

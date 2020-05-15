@@ -1,8 +1,8 @@
 import { Grid } from "../../Grid";
-import { Select } from 'enquirer'
 import cliProgress from 'cli-progress'
 import boxen from 'boxen'
 import chalk from 'chalk'
+const { Select } = require('enquirer')
 
 const printFormattedRelease = (release?: any) => {
   if(!release) {
