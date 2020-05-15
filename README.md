@@ -19,7 +19,8 @@ npm install -g ethbinary
 ethbinary geth@latest --goerli
 ```
 
-<p align="center"><img src="/img/fast_start.gif?raw=true"/></p>
+![Fast Start Gif](r./../img/fast_start.gif?raw=true "Title")
+
 
 ### Need a pre-funded test account?
 ```shell
