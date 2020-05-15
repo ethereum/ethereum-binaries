@@ -16,8 +16,15 @@ The easiest and safest way to interact with Ethereum clients & binaries.
 ## Installation
 ```shell
 npm install -g ethbinary
+```
+
+#### Example: Start Geth 
+```shell
 ethbinary geth@latest --goerli
 ```
+
+
+Will download the latest version of geth and start geth with a connection to the goerli testnet:
 
 ![Fast Start Gif](r./../img/fast_start.gif?raw=true "Title")
 
