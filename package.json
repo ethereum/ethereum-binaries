@@ -1,0 +1,35 @@
+{
+  "name": "ethbinary",
+  "version": "0.5.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "nyc mocha",
+    "start": "node ./dist/index.js",
+    "build": "tsc -p ./tsconfig.json",
+    "watch": "tsc -p ./tsconfig.json -w"
+  },
+  "author": "",
+  "license": "ISC",
+  "bin": {
+    "ethbinary": "./dist/bin/ethbin.js"
+  },
+  "dependencies": {
+    "boxen": "^4.2.0",
+    "chalk": "^4.0.0",
+    "cli-progress": "^3.8.2",
+    "clime": "^0.5.10",
+    "ethpkg": "^0.9.0"
+  },
+  "devDependencies": {
+    "@types/chai": "^4.2.11",
+    "@types/cli-progress": "^3.7.0",
+    "@types/mocha": "^7.0.2",
+    "@types/node": "^14.0.1",
+    "chai": "^4.2.0",
+    "mocha": "^7.1.2",
+    "nyc": "^15.0.1",
+    "ts-node": "^8.10.1",
+    "typescript": "^3.9.2"
+  }
+}
