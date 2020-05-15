@@ -15,14 +15,11 @@ The easiest and safest way to interact with Ethereum clients & binaries.
 
 ## Installation
 ```shell
-mpn install -g ethbinary
-```
-
-```shell
+npm install -g ethbinary
 ethbinary geth@latest --goerli
 ```
 
-
+<p align="center"><img src="/img/fast_start.gif?raw=true"/></p>
 
 ### Need a pre-funded test account?
 ```shell
