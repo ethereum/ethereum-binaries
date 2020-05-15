@@ -13,8 +13,13 @@ The easiest and safest way to interact with Ethereum clients & binaries.
 
 # 🚀 Fast Start 🚀
 
+## Installation
 ```shell
-npx ethbinary geth@latest --goerli
+mpn install -g ethbinary
+```
+
+```shell
+ethbinary geth@latest --goerli
 ```
 
 
