@@ -2,13 +2,8 @@ import fs from 'fs'
 import path from 'path'
 import { spawn, ChildProcess } from 'child_process'
 import { PackageManager, IRelease, IPackage } from 'ethpkg'
-
-interface FilterConfig {
-  name: {
-    includes?: Array<string>;
-    excludes?: Array<string>;
-  }
-}
+import { clients } from './client_plugins'
+import { normalizePlatform, uuid, FilterFunction, createFilterFunction } from './utils'
 
 interface ClientConfig {
   repository: string;
@@ -18,7 +13,6 @@ interface ClientConfig {
 }
 
 export declare type StateListener = (newState: string, args?: any) => void;
-declare type FilterFunction = (release: IRelease) => boolean;
 
 export interface DownloadOptions {
   platform?: string;
@@ -26,47 +20,33 @@ export interface DownloadOptions {
   cachePath?: string;
 }
 
-const createFilterFunction = (filterConfig? : FilterConfig) : FilterFunction => {
-  if (!filterConfig || !('name' in filterConfig)) {
-    return (() => true)
-  }
-  const { name } = filterConfig
-  const includes : Array<string> = name.includes || []
-  const excludes: Array<string> = name.excludes || []
-  return ({ fileName, version } : any) => {
-    if (!fileName) {
-      return false
-    }
-    fileName = fileName.toLowerCase()
-    const shouldFilter = (
-      (!includes || includes.every(val => fileName.indexOf(val) >= 0)) &&
-      (!excludes || excludes.every(val => fileName.indexOf(val) === -1))
-    )
-    // console.log(fileName, shouldFilter, excludes)
-    return shouldFilter
-  }
-}
-
-const normalizePlatform = (platform: string) => {
-  if (['mac'].includes(platform.toLowerCase())) {
-    platform = 'darwin'
-  } 
-  else if (['win32'].includes(platform.toLowerCase())) {
-    platform = 'windows'
-  }
-  return platform
+export interface ClientInfo {
+  id: string
+  started: number // ts
+  binaryPath: string
+  processId: number
 }
 
 export class Grid {
 
   private _packageManager: PackageManager
+  private _clients : Array<ClientInfo>
+  private _processes : Array<any>
 
   constructor() {
     this._packageManager = new PackageManager()
+    this._clients = []
+    this._processes = []
+  }
+
+  public async status() {
+    return {
+      clients: JSON.stringify(this._clients)
+    }
   }
 
   private async _getClientConfig(clientName: string) : Promise<ClientConfig> {
-    let { default: config } = require('./client_plugins/geth')
+    let config = clients[clientName]
     if (!config) {
       throw new Error('Unsupported client: '+clientName)
     }
@@ -76,8 +56,12 @@ export class Grid {
     return config
   }
 
-  public async getAvailableClients() {
+  public addClientConfig(name: string, config: ClientConfig) {
+    clients[name] = config
+  }
 
+  public async getAvailableClients() {
+    return Object.keys(clients)
   }
 
   public async getClientVersions(clientName: string) : Promise<Array<IRelease>> {
@@ -163,20 +147,43 @@ export class Grid {
     return binaryPath
   }
 
-  public async startClient(clientName: string, version: string = 'latest', flags: string[] = [], options: DownloadOptions) {
+  public async startClient(clientName: string, version: string = 'latest', flags: string[] = [], options?: DownloadOptions) : Promise<ClientInfo> {
     const clientBinaryPath = await this.getClient(clientName, version, options)
-    if(options.listener) {
+    if(options && options.listener) {
       options.listener('starting_client')
     }
+    const stdio = 'pipe' // 'inherit'
     const _process = spawn(clientBinaryPath, [...flags], {
-      stdio: 'inherit',
+      stdio: [stdio, stdio, stdio],
       detached: false,
       shell: false,
     })
+    this._processes.push({
+      process: _process
+    })
+    const clientInfo = {
+      id: uuid(),
+      started: Date.now(),
+      processId: _process.pid,
+      binaryPath: clientBinaryPath
+    }
+    this._clients.push(clientInfo)
+    return clientInfo
   }
 
   public async stopClient(clientId: string) {
-
+    const clientInfo = this._clients.find(clientInfo => clientInfo.id === clientId);
+    if (!clientInfo) {
+      throw new Error('Client not found')
+    }
+    const { process: _process } = this._processes.find(p => p.process.pid === clientInfo.processId);
+    if (!_process) {
+      throw new Error(`Client process could not be found`);
+    }
+    console.log('Killing process:', path.basename(clientInfo.binaryPath), 'process pid:', _process.pid);
+    (<ChildProcess>_process).kill();
+    this._clients = this._clients.filter(clientInfo => clientInfo.id !== clientId)
+    this._processes = this._processes.filter(p => p.process.pid !== clientInfo.processId);
   }
 
   public async waitForState(clientId: string) {
@@ -184,6 +191,10 @@ export class Grid {
   }
 
   public async execute(clientId: string) {
+
+  }
+
+  public async rpc() {
 
   }
 
