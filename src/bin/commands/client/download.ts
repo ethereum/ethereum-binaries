@@ -2,7 +2,7 @@ import { Command, command, metadata } from 'clime'
 import { downloadClient } from '../../lib'
 
 @command({
-  description: 'Prints the Grid version number',
+  description: 'Downloads a client',
 })
 export default class extends Command {
   @metadata

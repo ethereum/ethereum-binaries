@@ -3,7 +3,7 @@ import fs from 'fs'
 import path from 'path'
 
 @command({
-  description: 'Prints the Grid version number',
+  description: 'Prints the ethbinary version number',
 })
 export default class extends Command {
   @metadata
