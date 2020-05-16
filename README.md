@@ -81,18 +81,20 @@ console.log('state 3', await cm.status())  // { clients: '[]' }
 
 ### API
 
-#### public async getClientVersions(clientName: string) : Promise<IRelease[]>
+#### ClientManager
+
+##### public async getClientVersions(clientName: string) : Promise<IRelease[]>
 
 Returns the release list for a client.
 
-#### public async getClient(clientName: string, version: string, options?: DownloadOptions) : Promise<binaryPath>
+##### public async getClient(clientName: string, version: string, options?: DownloadOptions) : Promise<binaryPath>
 
 Downloads a client or detects a cached client and returns the path to the binary. If version is `latest` and a newer version than the one on the system exists it will download the newer version automatically. If the client uses a runtime such as Java it will return the path to the extracted package contents and Java runtimee.
 
-#### public async startClient(clientName: string, version: string, flags?: string[], options?: DownloadOptions) : Promise<ClientInfo>
+##### public async startClient(clientName: string, version: string, flags?: string[], options?: DownloadOptions) : Promise<ClientInfo>
 Uses `getClient` internally but also starts a new child process for the client binary.
 
-#### public async stopClient(clientId: string)
+##### public async stopClient(clientId: string)
 Stops the process(es) associated with a client.
 Throws if no process is found.
 
