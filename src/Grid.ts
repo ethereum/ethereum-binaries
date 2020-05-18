@@ -1,62 +1,71 @@
 import fs from 'fs'
 import path from 'path'
-import { spawn, ChildProcess } from 'child_process'
-import { PackageManager, IRelease, IPackage } from 'ethpkg'
+import ethpkg, { PackageManager, IRelease, IPackage, download } from 'ethpkg'
 import { clients } from './client_plugins'
-import { normalizePlatform, uuid, FilterFunction, createFilterFunction } from './utils'
+import { normalizePlatform, uuid, createFilterFunction, validateConfig, verifyBinary } from './utils'
+import { ClientInfo, ClientConfig, DownloadOptions, ClientStartOptions, instanceofPackageConfig, instanceofDockerConfig, instanceofClientInfo, CommandOptions, IClient } from './types'
+import DockerManager from './DockerManager'
+import { Logger } from './Logger'
+import { ProcessManager } from './ProcessManager'
+import { DockerizedClient } from './Client/DockerizedClient'
+import { BinaryClient } from './Client/BinaryClient'
 
-interface ClientConfig {
-  repository: string;
-  prefix?: undefined;
-  filter?: FilterFunction;
-  binaryName?: string; // the name of binary in package - e.g. 'geth'; auto-expanded to geth.exe if necessary
-}
-
-export declare type StateListener = (newState: string, args?: any) => void;
-
-export interface DownloadOptions {
-  platform?: string;
-  listener?: StateListener;
-  cachePath?: string;
-}
-
-export interface ClientInfo {
-  id: string
-  started: number // ts
-  binaryPath: string
-  processId: number
-}
+const DOCKER_PREFIX = 'ethbinary'
 
 export class Grid {
 
   private _packageManager: PackageManager
-  private _clients : Array<ClientInfo>
-  private _processes : Array<any>
+  private _clients: Array<IClient>
+  private _dockerManager: DockerManager
+  private _processManager: ProcessManager
+  private _logger: Logger
 
   constructor() {
+    this._logger = new Logger()
     this._packageManager = new PackageManager()
+    this._dockerManager = new DockerManager(DOCKER_PREFIX)
+    this._processManager = new ProcessManager()
     this._clients = []
-    this._processes = []
+
+    // exitHandler MUST only perform sync operations
+    function exitHandler(options: any, exitCode: any) {
+      console.log('exit handler called', exitCode)
+
+      // TODO stop running docker containers or kill processes
+
+      if (exitCode || exitCode === 0) console.log(exitCode);
+      if (options.exit) process.exit();
+    }
+    process.on('SIGINT', exitHandler.bind(null, { exit: true }));
   }
 
   public async status() {
     return {
-      clients: JSON.stringify(this._clients)
+      clients: this._clients.map(c => c.info())
     }
   }
 
-  private async _getClientConfig(clientName: string) : Promise<ClientConfig> {
+  private async _getClientConfig(clientName: string): Promise<ClientConfig> {
     let config = clients[clientName]
     if (!config) {
-      throw new Error('Unsupported client: '+clientName)
+      console.warn('Supported clients are', await this.getAvailableClients())
+      throw new Error('Unsupported client: ' + clientName)
     }
-    config = {...config} // clone before modification
+    let isValid = validateConfig(config)
+    if (!isValid) {
+      throw new Error('Invalid client config')
+    }
+    config = { ...config } // clone before modification
     // convert filter object to function
     config.filter = createFilterFunction(config.filter)
     return config
   }
 
   public addClientConfig(name: string, config: ClientConfig) {
+    let isValid = validateConfig(config)
+    if (!isValid) {
+      throw new Error('Invalid client config')
+    }
     clients[name] = config
   }
 
@@ -64,8 +73,12 @@ export class Grid {
     return Object.keys(clients)
   }
 
-  public async getClientVersions(clientName: string) : Promise<Array<IRelease>> {
+  public async getClientVersions(clientName: string): Promise<Array<IRelease>> {
     const config = await this._getClientConfig(clientName)
+    if (!instanceofPackageConfig(config)) {
+      // TODO handle docker versions
+      return []
+    }
     const releases = await this._packageManager.listPackages(config.repository, {
       prefix: config.prefix,
       filter: config.filter
@@ -84,7 +97,7 @@ export class Grid {
       binaryEntry = entries.find((e: any) => e.relativePath.endsWith(binaryName))
     } else {
       // try to detect binary
-      console.warn('No "binaryName" specified: trying to auto-detect executable within package')
+      this._logger.warn('No "binaryName" specified: trying to auto-detect executable within package')
       // const isExecutable = mode => Boolean((mode & 0o0001) || (mode & 0o0010) || (mode & 0o0100))
       if (process.platform === 'win32') {
         binaryEntry = entries.find((e: any) => e.relativePath.endsWith('.exe'))
@@ -100,7 +113,7 @@ export class Grid {
       )
     } else {
       binaryName = binaryEntry.file.name
-      // console.log('auto-detected binary:', binaryName)
+      this._logger.log('auto-detected binary:', binaryName)
     }
 
     const destAbs = path.join(destPath, `${binaryName}_${pkg.metadata?.version}`)
@@ -123,75 +136,106 @@ export class Grid {
     platform = process.platform,
     listener = undefined,
     cachePath = path.join(process.cwd(), 'cache')
-  } : DownloadOptions = {}) : Promise<string> {
+  }: DownloadOptions = {}): Promise<ClientInfo> {
     const config = await this._getClientConfig(clientName)
-    if(!fs.existsSync(cachePath)) {
+    if (!fs.existsSync(cachePath)) {
       fs.mkdirSync(cachePath, { recursive: true })
     }
     platform = normalizePlatform(platform)
-    const pkg = await this._packageManager.getPackage(config.repository, {
-      prefix: config.prefix, // server-side filter based on string prefix
-      version: version === 'latest' ? undefined : version, // specific version or version range that should be returned
-      platform,
-      filter: config.filter, // string filter e.g. filter 'unstable' excludes geth-darwin-amd64-1.9.14-unstable-6f54ae24 
-      cache: cachePath, // avoids download if package is found in cache
-      destPath: cachePath, // where to write package + metadata
-      listener, // listen to progress events
-      extract: false, // extracts all package contents (good for java / python runtime clients without  single binary)
-      verify: false // ethpkg verification
-    })
-    if (!pkg) {
-      throw new Error('Package not found')
+    if (instanceofDockerConfig(config)) {
+      // lazy init to avoid crashes for non docker functionality
+      this._dockerManager.connect()
+      const imageName = await this._dockerManager.getOrCreateImage(config.name, config.dockerfile, listener)
+      if (!imageName) {
+        throw new Error('Docker image could not be found or created')
+      }
+      this._logger.log('image created', imageName)
+      // only [a-zA-Z0-9][a-zA-Z0-9_.-] are allowed for container names 
+      // but image name can be urls like gcr.io/prysmaticlabs/prysm/validator
+      const containerName = `ethbinary_${config.name}_container`
+      const container = await this._dockerManager.createContainer(imageName, containerName)
+      if (!container) {
+        throw new Error('Docker container could not be created')
+      }
+      // client is a docker container and client path is name of the docker container
+      const client = new DockerizedClient(container, this._dockerManager, config)
+      this._clients.push(client)
+      
+      return client.info()
     }
-    const binaryPath = await this._extractBinary(pkg, config.binaryName, cachePath)
-    return binaryPath
+    else if (instanceofPackageConfig(config)) {
+      const pkg = await this._packageManager.getPackage(config.repository, {
+        prefix: config.prefix, // server-side filter based on string prefix
+        version: version === 'latest' ? undefined : version, // specific version or version range that should be returned
+        platform,
+        filter: config.filter, // string filter e.g. filter 'unstable' excludes geth-darwin-amd64-1.9.14-unstable-6f54ae24 
+        cache: cachePath, // avoids download if package is found in cache
+        destPath: cachePath, // where to write package + metadata
+        listener, // listen to progress events
+        extract: false, // extracts all package contents (good for java / python runtime clients without  single binary)
+        verify: false // ethpkg verification
+      })
+      if (!pkg) {
+        throw new Error('Package not found')
+      }
+
+      // verify package
+      if (pkg.metadata && pkg.metadata.signature) {
+        // TODO call listener
+        const detachedSignature = await download(pkg.metadata.signature)
+        if (!pkg.filePath) {
+          throw new Error('Package could not be located for verification')
+        }
+        if (!config.publicKey) {
+          throw new Error('PackageConfig does not specify public key')
+        }
+        const verificationResult = await verifyBinary(pkg.filePath, config.publicKey, detachedSignature.toString())
+        // console.log('verification result', verificationResult)
+      }
+
+      const binaryPath = await this._extractBinary(pkg, config.binaryName, cachePath)
+      const client = new BinaryClient(binaryPath, this._processManager, config)
+      this._clients.push(client)
+
+      return client.info()
+    }
+    throw new Error(`Client config does not specify how to retrieve client: repository or dockerfile should be set`)
   }
 
-  public async startClient(clientName: string, version: string = 'latest', flags: string[] = [], options?: DownloadOptions) : Promise<ClientInfo> {
-    const clientBinaryPath = await this.getClient(clientName, version, options)
-    if(options && options.listener) {
-      options.listener('starting_client')
-    }
-    const stdio = 'pipe' // 'inherit'
-    const _process = spawn(clientBinaryPath, [...flags], {
-      stdio: [stdio, stdio, stdio],
-      detached: false,
-      shell: false,
-    })
-    this._processes.push({
-      process: _process
-    })
-    const clientInfo = {
-      id: uuid(),
-      started: Date.now(),
-      processId: _process.pid,
-      binaryPath: clientBinaryPath
-    }
-    this._clients.push(clientInfo)
-    return clientInfo
+  public async startClient(clientId: string | ClientInfo, flags: string[] = [], options: ClientStartOptions = {}): Promise<ClientInfo> {
+    const client: IClient = this._findClient(clientId)
+    // add started client to client list
+    await client.start(flags, options)
+    return client.info()
   }
 
-  public async stopClient(clientId: string) {
-    const clientInfo = this._clients.find(clientInfo => clientInfo.id === clientId);
-    if (!clientInfo) {
+  private _findClient(clientId: string | ClientInfo) {
+    if (instanceofClientInfo(clientId)) {
+      clientId = clientId.id
+    }
+    const client = this._clients.find(client => client.id === clientId);
+    if (!client) {
       throw new Error('Client not found')
     }
-    const { process: _process } = this._processes.find(p => p.process.pid === clientInfo.processId);
-    if (!_process) {
-      throw new Error(`Client process could not be found`);
-    }
-    console.log('Killing process:', path.basename(clientInfo.binaryPath), 'process pid:', _process.pid);
-    (<ChildProcess>_process).kill();
-    this._clients = this._clients.filter(clientInfo => clientInfo.id !== clientId)
-    this._processes = this._processes.filter(p => p.process.pid !== clientInfo.processId);
+    return client
+  }
+
+  public async stopClient(clientId: string | ClientInfo) : Promise<ClientInfo> {
+    const client: IClient = this._findClient(clientId)
+    await client.stop()
+    // remove stopped client from client list // TODO make setting?
+    // this._clients = this._clients.filter(c => c.id !== client.id)
+    // console.log('Killing process:', path.basename(clientInfo.binaryPath), 'process pid:', _process.pid);
+    return client.info()
   }
 
   public async waitForState(clientId: string) {
 
   }
 
-  public async execute(clientId: string) {
-
+  public async execute(clientId: string | ClientInfo, command: string, options?: CommandOptions): Promise<Array<string>> {
+    this._logger.verbose('execute on client', clientId)
+    throw new Error('not implemented')
   }
 
   public async rpc() {
