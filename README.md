@@ -1,6 +1,6 @@
 # Ethereum Binaries
 
-The fast, easy and secure Ethereum binaries management.
+The fast, easy and secure Ethereum binary management.
 
 - [X] 🎁 **Package Extraction**
 - [x] 🔐 **Binary Verification**
@@ -84,13 +84,27 @@ OPTIONS
 const { ClientManager } = require('ethbinary')
 const cm = new ClientManager()
 console.log('state 1', await cm.status()) // { clients: '[]' }
-const clientInfo = await cm.startClient('geth', 'latest', ['--goerli'])
+const client = await cm.getClient('geth', 'latest')
+await cm.startClient(client, ['--goerli'])
 console.log('state 2', await cm.status()) // [{"id":"1sLljJfFO9hr43d-","started":1589624226599,"processId":"98957","binaryPath":"/../geth_1.9.14"}]
-const result = await cm.stopClient(clientInfo.id)
+const result = await cm.stopClient(client)
 console.log('state 3', await cm.status())  // { clients: '[]' }
 ```
 
 ### API
+
+#### ClientInfo
+
+```typescript
+ClientInfo {
+  id: string // generated internal uuid
+  type: 'docker' | 'binary'
+  started: number // timestamp
+  stopped: number // timestamp
+  binaryPath: string // path to extracted binary, runtime or docker container name
+  processId: string // process id for started binaries or container id for docker clients
+}
+```
 
 #### ClientManager
 
@@ -98,18 +112,18 @@ console.log('state 3', await cm.status())  // { clients: '[]' }
 
 Returns the release list for a client.
 
-##### public async getClient(clientName: string, version: string, options?: DownloadOptions) : Promise<binaryPath>
+##### public async getClient(clientName: string, version: string, options?: DownloadOptions) : Promise<ClientInfo>
 
-Downloads a client or detects a cached client.
-If version is `latest` and a newer version than the one on the system exists it will download the newer version automatically. 
-If binary can be extracted from a package it returns the path to the binary.
-If the client uses a runtime such as Java it will return the path to the extracted package contents and Java runtime.
-If the client is distributed as a docker image this method will return the name of the existing or generated container.
+Uses a cached client, or downloads an updated one / pulls image and returns `ClientInfo`.
+If version is `latest` and a newer version than the one on the system exists, it will download the newer version automatically. 
+If binary can be extracted from a package it will be extracted and written to `cachePath`.
+If the client uses a runtime such as Java it will extract all package contents and `binaryPath` will point to the Java runtime.
+If the client is distributed as a docker image `binaryPath` will be set to the name of the existing or generated Docker container.
 
-##### public async startClient(clientName: string, version: string, flags?: string[], options?: DownloadOptions) : Promise<ClientInfo>
+##### public async startClient(clientId: string | ClientInfo,, version: string, flags?: string[], options?: DownloadOptions) : Promise<ClientInfo>
 Uses `getClient` internally but also starts a new child process for the client binary.
 
-##### public async stopClient(clientId: string)
+##### public async stopClient(clientId: string | ClientInfo,) : Promise<ClientInfo>
 Stops the process(es) associated with a client.
 Throws if no process is found.
 
