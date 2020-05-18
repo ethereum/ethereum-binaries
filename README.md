@@ -96,7 +96,7 @@ console.log('state 3', await cm.status())  // { clients: '[]' }
 #### ClientInfo
 
 ```typescript
-ClientInfo {
+interface ClientInfo {
   id: string // generated internal uuid
   type: 'docker' | 'binary'
   started: number // timestamp
@@ -108,11 +108,11 @@ ClientInfo {
 
 #### ClientManager
 
-##### public async getClientVersions(clientName: string) : Promise<IRelease[]>
+##### `public async getClientVersions(clientName: string) : Promise<IRelease[]>`
 
 Returns the release list for a client.
 
-##### public async getClient(clientName: string, version: string, options?: DownloadOptions) : Promise<ClientInfo>
+##### `public async getClient(clientName: string, version: string, options?: DownloadOptions) : Promise<ClientInfo>`
 
 Uses a cached client, or downloads an updated one / pulls image and returns `ClientInfo`.
 If version is `latest` and a newer version than the one on the system exists, it will download the newer version automatically. 
@@ -120,18 +120,18 @@ If binary can be extracted from a package it will be extracted and written to `c
 If the client uses a runtime such as Java it will extract all package contents and `binaryPath` will point to the Java runtime.
 If the client is distributed as a docker image `binaryPath` will be set to the name of the existing or generated Docker container.
 
-##### public async startClient(clientId: string | ClientInfo,, version: string, flags?: string[], options?: DownloadOptions) : Promise<ClientInfo>
+##### `public async startClient(clientId: string | ClientInfo,, version: string, flags?: string[], options?: DownloadOptions) : Promise<ClientInfo>`
 Uses `getClient` internally but also starts a new child process for the client binary.
 
-##### public async stopClient(clientId: string | ClientInfo,) : Promise<ClientInfo>
-Stops the process(es) associated with a client.
+##### `public async stopClient(clientId: string | ClientInfo,) : Promise<ClientInfo>`
+Stops the process(es) and container(s) associated with a client.
 Throws if no process is found.
 
 ## Use with Docker
 
 ### Clients
 
-ethbinary supports the execution of dockerized client i.e. binaries that are distributed as docker images.
+`ethbinary` supports the execution of dockerized clients i.e. binaries that are distributed as Docker images.
 If a dockerized client is started, the `processId` of the `ClientInfo` object returned will be the respective container id.
 
 ### Wrapping Binaries
