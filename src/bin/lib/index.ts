@@ -1,4 +1,4 @@
-import { Grid } from "../../Grid";
+import { ClientManager } from "../../ClientManager";
 import cliProgress from 'cli-progress'
 import boxen from 'boxen'
 import chalk from 'chalk'
@@ -15,7 +15,8 @@ const printFormattedRelease = (release?: any) => {
   console.log(boxen(chalk.grey(JSON.stringify(release, undefined, 2))))
 }
 
-export const clientSpecifierToCommand = (clientSpecifier: string) => {
+export const clientSpecifierToCommand = (clientSpecifier?: string) => {
+  if (!clientSpecifier) return []
   if (clientSpecifier.includes('@')) {
     const [client, version] = clientSpecifier.split('@')
     return ['client', 'start', client, version]
@@ -53,31 +54,38 @@ const createProgressListener = () => {
   }
 }
 
-export const downloadClient = async (clientName = 'geth') => {
+export const downloadClient = async (clientName = 'geth', clientVersion?: string) => {
 
-    const grid = new Grid()
-    let versions = await grid.getClientVersions(clientName)
+    const cm = ClientManager.getInstance()
+    if (!clientVersion){
+      let versions = await cm.getClientVersions(clientName)
+      const prompt = new Select({
+        name: 'selectedAccount',
+        message: 'Which version?',
+        choices: versions.map((r, idx) => ({
+          name: r.version, 
+          message: `${r.version} (${r.updated_at})`
+        }))
+      });
+      const selectedVersion = await prompt.run()
+      clientVersion = selectedVersion
+    }
 
-    const prompt = new Select({
-      name: 'selectedAccount',
-      message: 'Which version?',
-      choices: versions.map((r, idx) => ({
-        name: r.version, 
-        message: `${r.version} (${r.updated_at})`
-      }))
-    });
-    const selectedVersion = await prompt.run()
-
-    const client = await grid.getClient(clientName, selectedVersion, {
+    const client = await cm.getClient(clientName, clientVersion, {
       listener: createProgressListener()
     })
 
     // console.log('client binary path', client)
 }
 
-export const startClient = async (clientName = 'geth', version='latest', flags: string[] = []) => {
-  const grid = new Grid()
-  await grid.startClient(clientName, version, flags, {
-    listener: createProgressListener()
+export const startClient = async (clientName = 'geth', version='latest', flags: string[] = [], options = {}) => {
+  const cm = ClientManager.getInstance()
+  const listener = createProgressListener()
+  const client = await cm.getClient(clientName, version, {
+    listener
+  })
+  await cm.startClient(client, flags, {
+    listener,
+    ...options
   })
 }
