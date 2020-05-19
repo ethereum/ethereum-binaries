@@ -1,6 +1,6 @@
 # Ethereum Binaries
 
-The fast, easy and secure Ethereum binary management.
+Fast, easy and secure Ethereum binary management.
 
 - [X] 🎁 **Package Extraction**
 - [x] 🔐 **Binary Verification**
@@ -11,6 +11,9 @@ The fast, easy and secure Ethereum binary management.
 - [x] ⚡ **Caching**
 - [x] 🐙 **Version Management**
 - [x] 🌈 **Multi Client Support**
+
+# Supported Clients & Binaries
+
 
 # Installation
 ```shell
@@ -29,15 +32,12 @@ Will download the latest version of geth and start geth with a connection to the
 ![Fast Start Gif](r./../img/fast_start.gif?raw=true "Title")
 
 
-### Need a pre-funded test account?
+#### Need a pre-funded test account?
 ```shell
 npm create eth-test-account
 ```
 
-### Supported Clients
-
-
-## Use in CLI
+# Use in CLI
 
 ### Overview
 
@@ -48,7 +48,8 @@ npm create eth-test-account
 
   SUBCOMMANDS
 
-    download - Downloads a client         
+    download - Downloads a client   
+    exec     - Executes a command on a client      
     list     - Lists the supported clients
     start    - Starts a client 
 ```
@@ -77,7 +78,15 @@ OPTIONS
   -f, --flags <flags> - client flags
 ```
 
-## Use as Module
+### Execute a Command
+
+#### Example Create Account
+
+```shell
+ethbinary client exec geth latest "account new"
+```
+
+# Use as Module
 
 ### Example
 ```javascript
@@ -99,6 +108,7 @@ console.log('state 3', await cm.status())  // { clients: '[]' }
 interface ClientInfo {
   id: string // generated internal uuid
   type: 'docker' | 'binary'
+  state: 'INIT' | 'STARTED' | 'STOPPED' | 'ERROR'
   started: number // timestamp
   stopped: number // timestamp
   binaryPath: string // path to extracted binary, runtime or docker container name
@@ -127,7 +137,7 @@ Uses `getClient` internally but also starts a new child process for the client b
 Stops the process(es) and container(s) associated with a client.
 Throws if no process is found.
 
-## Use with Docker
+# Use with Docker
 
 ### Clients
 
@@ -136,11 +146,11 @@ If a dockerized client is started, the `processId` of the `ClientInfo` object re
 
 ### Wrapping Binaries
 
-## Use in CI
+# Use in CI
 
-## Binary Verification
+# Binary Verification
 
-## Extension
+# Extension
 
 Client support is handled through a `ClientConfiguration`.
 
