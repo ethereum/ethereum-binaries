@@ -90,7 +90,7 @@ await cm.stopClient(client)
 
 ### More Examples
 
-#### [the specifcation draft](examples/create_account.js)
+#### [Create Account](examples/create_account.js)
 
 ### API
 
