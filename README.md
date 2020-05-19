@@ -32,11 +32,6 @@ Will download the latest version of geth and start geth with a connection to the
 ![Fast Start Gif](r./../img/fast_start.gif?raw=true "Title")
 
 
-#### Need a pre-funded test account?
-```shell
-npm create eth-test-account
-```
-
 # Use in CLI
 
 ### Overview
@@ -44,61 +39,51 @@ npm create eth-test-account
 ```shell
   USAGE
 
-    ethbinary client <subcommand>
+    ethbinary <subcommand>
 
   SUBCOMMANDS
 
-    download - Downloads a client   
-    exec     - Executes a command on a client      
-    list     - Lists the supported clients
-    start    - Starts a client 
+    download - Downloads a client                 
+    exec     - Executes a command on a client     
+    list     - Lists the supported clients        
+    start    - Starts a client                    
+    version  - Prints the ethbinary version
 ```
 
-### Start a client
+Commands will auto-detect the operating system and download binaries for the correct platform.
+All client commands support a shorthand `<client name>@<version>`.
 
-#### Client Specifier Syntax
-
-```shell
-ethbinary <client>@<version_tag> <flags>
-```
-
-#### Verbose syntax:
-```shell
-USAGE
-
-  ethbinary client start <client> [version=latest] [...options]
-
-PARAMETERS
-
-  client  - client name   
-  version - client version
-
-OPTIONS
-
-  -f, --flags <flags> - client flags
-```
-
-### Execute a Command
-
-#### Example Create Account
+### Examples
 
 ```shell
-ethbinary client exec geth latest "account new"
+ethbinary list //example: returns [ 'besu', 'ewasm', 'geth', 'prysm' ]
+
+ethbinary download geth // will display version selector
+ethbinary download geth@1.9.10 // short-hand specifier
+ethbinary download geth --clientVersion 1.9.10 
+
+ethbinary exec geth@latest "version" // the command MUST be one string for the parser to work
+ethbinary exec geth@latest "account new" // is auto-attached to terminal so that stdin for password works
+ethbinary exec geth --clientVersion latest "account new"
+
+ethbinary start geth // will start latest geth version with mainnet connection (geth default)
+ethbinary start geth --goerli
+ethbinary start geth@1.9.10 --goerli
 ```
 
 # Use as Module
 
-### Example
+### Example Start Client Service
 ```javascript
-const { ClientManager } = require('ethbinary')
-const cm = new ClientManager()
-console.log('state 1', await cm.status()) // { clients: '[]' }
-const client = await cm.getClient('geth', 'latest')
+const { default: cm } = require('ethbinary') // get the client manager instance
+const client = await cm.getClient('geth')
 await cm.startClient(client, ['--goerli'])
-console.log('state 2', await cm.status()) // [{"id":"1sLljJfFO9hr43d-","started":1589624226599,"processId":"98957","binaryPath":"/../geth_1.9.14"}]
-const result = await cm.stopClient(client)
-console.log('state 3', await cm.status())  // { clients: '[]' }
+await cm.stopClient(client)
 ```
+
+### More Examples
+
+#### [the specifcation draft](examples/create_account.js)
 
 ### API
 
@@ -124,16 +109,18 @@ Returns the release list for a client.
 
 ##### `public async getClient(clientName: string, version: string, options?: DownloadOptions) : Promise<ClientInfo>`
 
-Uses a cached client, or downloads an updated one / pulls image and returns `ClientInfo`.
+Uses a cached client, or downloads a new / updated one / pulls docker image and returns `ClientInfo`.
 If version is `latest` and a newer version than the one on the system exists, it will download the newer version automatically. 
-If binary can be extracted from a package it will be extracted and written to `cachePath`.
+If binary can be extracted from a package it will be extracted and written to `options.cachePath`.
 If the client uses a runtime such as Java it will extract all package contents and `binaryPath` will point to the Java runtime.
 If the client is distributed as a docker image `binaryPath` will be set to the name of the existing or generated Docker container.
 
-##### `public async startClient(clientId: string | ClientInfo,, version: string, flags?: string[], options?: DownloadOptions) : Promise<ClientInfo>`
+##### `public async startClient(clientId: string | ClientInfo, version: string, flags?: string[], options?: DownloadOptions) : Promise<ClientInfo>`
+
 Uses `getClient` internally but also starts a new child process for the client binary.
 
 ##### `public async stopClient(clientId: string | ClientInfo,) : Promise<ClientInfo>`
+
 Stops the process(es) and container(s) associated with a client.
 Throws if no process is found.
 
@@ -145,8 +132,6 @@ Throws if no process is found.
 If a dockerized client is started, the `processId` of the `ClientInfo` object returned will be the respective container id.
 
 ### Wrapping Binaries
-
-# Use in CI
 
 # Binary Verification
 
@@ -182,6 +167,7 @@ export interface PackageConfig extends ClientBaseConfig {
 
 #### repository : `<repo specifier> | url`
 
+`<repo specifier>`: specifies the binary hoster with `ethpkg` syntax like `azure:gethstore`, `bintray:hyperledger-org/besu-repo/besu`, `github:ethereum/client`
 
 
 #### prefix : `string`
