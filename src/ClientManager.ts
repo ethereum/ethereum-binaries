@@ -9,10 +9,11 @@ import { Logger } from './Logger'
 import { ProcessManager } from './ProcessManager'
 import { DockerizedClient } from './Client/DockerizedClient'
 import { BinaryClient } from './Client/BinaryClient'
+import { CLIENT_STATE } from './Client/BaseClient'
 
 const DOCKER_PREFIX = 'ethbinary'
 
-export class Grid {
+export class ClientManager {
 
   private _packageManager: PackageManager
   private _clients: Array<IClient>
@@ -20,7 +21,13 @@ export class Grid {
   private _processManager: ProcessManager
   private _logger: Logger
 
-  constructor() {
+  /**
+   * Because a ClientManager instance handle process events like uncaughtException, exit, ..
+   * there should only be one instance
+   */
+  private static instance : ClientManager
+
+  private constructor() {
     this._logger = new Logger()
     this._packageManager = new PackageManager()
     this._dockerManager = new DockerManager(DOCKER_PREFIX)
@@ -28,18 +35,55 @@ export class Grid {
     this._clients = []
 
     // exitHandler MUST only perform sync operations
-    function exitHandler(options: any, exitCode: any) {
-      console.log('exit handler called', exitCode)
-
-      // TODO stop running docker containers or kill processes
+    const exitHandler = (options: any, exitCode: any) => {
+      console.log('  ==> exit handler called', exitCode)
 
       if (exitCode || exitCode === 0) console.log(exitCode);
       if (options.exit) process.exit();
     }
+
+    // https://stackoverflow.com/questions/40574218/how-to-perform-an-async-operation-on-exit
+    // The 'beforeExit' event is emitted when Node.js empties its event loop and has no additional work to schedule.
+    // Normally, the Node.js process will exit when there is no work scheduled, 
+    // but a listener registered on the 'beforeExit' event can make asynchronous calls, and thereby cause the Node.js process to continue.
+    process.on('beforeExit', async () => {
+      this._logger.log('ClientManager will exit. Cleaning up...')
+      await this._cleanup()
+    })
+
     process.on('SIGINT', exitHandler.bind(null, { exit: true }));
+    process.on('unhandledRejection', (reason, p) => {
+      // console.error('Unhandled Rejection at Promise', p);
+      console.error('Unhandled Promise Rejection', reason)
+      exitHandler({ exit: true }, 0)
+    })
   }
 
-  public async status() {
+  private async _cleanup() {
+    const runningClients = this._clients.filter(client => client.info().state !== CLIENT_STATE.STOPPED)
+    // TODO stop running docker containers or kill processes
+    console.log('Program will exit - try to stop running clients:')
+    for (const client of runningClients) {
+      try {
+        const info = client.info()
+        console.log(`Trying to stop ${info.type} client in state ${info.state} id:`, client.id)
+        await client.stop()
+        console.log('Success!')
+      } catch (error) {
+        console.error('Stop error', error)
+      }
+    }
+    process.exit()
+  }
+
+  public static getInstance() : ClientManager {
+    if (!ClientManager.instance) {
+      ClientManager.instance = new ClientManager()
+    }
+    return ClientManager.instance
+  }
+
+  public status() {
     return {
       clients: this._clients.map(c => c.info())
     }
@@ -61,12 +105,12 @@ export class Grid {
     return config
   }
 
-  public addClientConfig(name: string, config: ClientConfig) {
+  public addClientConfig(config: ClientConfig) {
     let isValid = validateConfig(config)
     if (!isValid) {
       throw new Error('Invalid client config')
     }
-    clients[name] = config
+    clients[config.name] = config
   }
 
   public async getAvailableClients() {
@@ -160,7 +204,6 @@ export class Grid {
       // client is a docker container and client path is name of the docker container
       const client = new DockerizedClient(container, this._dockerManager, config)
       this._clients.push(client)
-      
       return client.info()
     }
     else if (instanceofPackageConfig(config)) {
@@ -192,11 +235,9 @@ export class Grid {
         const verificationResult = await verifyBinary(pkg.filePath, config.publicKey, detachedSignature.toString())
         // console.log('verification result', verificationResult)
       }
-
       const binaryPath = await this._extractBinary(pkg, config.binaryName, cachePath)
       const client = new BinaryClient(binaryPath, this._processManager, config)
       this._clients.push(client)
-
       return client.info()
     }
     throw new Error(`Client config does not specify how to retrieve client: repository or dockerfile should be set`)
@@ -229,13 +270,15 @@ export class Grid {
     return client.info()
   }
 
-  public async waitForState(clientId: string) {
-
-  }
-
   public async execute(clientId: string | ClientInfo, command: string, options?: CommandOptions): Promise<Array<string>> {
     this._logger.verbose('execute on client', clientId)
-    throw new Error('not implemented')
+    const client: IClient = this._findClient(clientId)
+    const result = await client.execute(command, options)
+    return result
+  }
+
+  public async waitForState(clientId: string) {
+
   }
 
   public async rpc() {
