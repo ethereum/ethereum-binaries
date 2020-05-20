@@ -41,7 +41,6 @@ npm install -g ethbinary
 
 # Quickstart 🚀
 
-#### CLI Examples
 ```shell
 ethbinary geth@latest --goerli
 ```
@@ -50,7 +49,9 @@ Will download the latest version of geth and start geth with a connection to the
 
 ![Fast Start Gif](r./../img/fast_start.gif?raw=true "Title")
 
-#### More CLI Examples
+# Examples
+
+### CLI Examples
 ```shell
 ethbinary list //example: returns [ 'besu', 'ewasm', 'geth', 'prysm' ]
 
