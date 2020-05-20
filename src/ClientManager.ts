@@ -1,9 +1,9 @@
 import fs from 'fs'
 import path from 'path'
 import ethpkg, { PackageManager, IRelease, IPackage, download } from 'ethpkg'
-import { clients } from './client_plugins'
+import { clients as defaultClients } from './client_plugins'
 import { normalizePlatform, uuid, createFilterFunction, validateConfig, verifyBinary } from './utils'
-import { ClientInfo, ClientConfig, DownloadOptions, ClientStartOptions, instanceofPackageConfig, instanceofDockerConfig, instanceofClientInfo, CommandOptions, IClient } from './types'
+import { ClientInfo, ClientConfig, DownloadOptions, ClientStartOptions, instanceofPackageConfig, instanceofDockerConfig, instanceofClientInfo, CommandOptions, IClient, instanceofClientConfig } from './types'
 import DockerManager from './DockerManager'
 import { Logger } from './Logger'
 import { ProcessManager } from './ProcessManager'
@@ -20,6 +20,8 @@ export class ClientManager {
   private _dockerManager: DockerManager
   private _processManager: ProcessManager
   private _logger: Logger
+  private _clientConfigs : {[index:string] : ClientConfig}
+  private _clientInstance?: ClientInfo
 
   /**
    * Because a ClientManager instance handle process events like uncaughtException, exit, ..
@@ -33,12 +35,13 @@ export class ClientManager {
     this._dockerManager = new DockerManager(DOCKER_PREFIX)
     this._processManager = new ProcessManager()
     this._clients = []
+    this._clientConfigs = {}
+
+    this.addClientConfig(defaultClients)
 
     // exitHandler MUST only perform sync operations
     const exitHandler = (options: any, exitCode: any) => {
-      console.log('  ==> exit handler called', exitCode)
-
-      if (exitCode || exitCode === 0) console.log(exitCode);
+      console.log('  ==> exit handler called with code', exitCode)
       if (options.exit) process.exit();
     }
 
@@ -46,31 +49,37 @@ export class ClientManager {
     // The 'beforeExit' event is emitted when Node.js empties its event loop and has no additional work to schedule.
     // Normally, the Node.js process will exit when there is no work scheduled, 
     // but a listener registered on the 'beforeExit' event can make asynchronous calls, and thereby cause the Node.js process to continue.
-    process.on('beforeExit', async () => {
+    process.on('beforeExit', async (code) => {
       this._logger.log('ClientManager will exit. Cleaning up...')
       await this._cleanup()
+      exitHandler({ exit: true }, code)
     })
-
-    process.on('SIGINT', exitHandler.bind(null, { exit: true }));
-    process.on('unhandledRejection', (reason, p) => {
+    process.on('SIGINT', async (code) => {
+      console.log('sigint')
+      this._logger.log('ClientManager got SIGINT. Cleaning up...')
+      await this._cleanup()
+      exitHandler({ exit: true }, code)
+    });
+    process.on('unhandledRejection', async (reason, p) => {
       // console.error('Unhandled Rejection at Promise', p);
       console.error('Unhandled Promise Rejection', reason)
+      await this._cleanup()
       exitHandler({ exit: true }, 0)
     })
   }
 
   private async _cleanup() {
-    const runningClients = this._clients.filter(client => client.info().state !== CLIENT_STATE.STOPPED)
+    const runningClients = this._clients.filter(client => client.info().state === CLIENT_STATE.STARTED)
     // TODO stop running docker containers or kill processes
-    console.log('Program will exit - try to stop running clients:')
+    console.log('INFO Program will exit - try to stop running clients: '+runningClients.length)
     for (const client of runningClients) {
       try {
         const info = client.info()
         console.log(`Trying to stop ${info.type} client in state ${info.state} id:`, client.id)
         await client.stop()
-        console.log('Success!')
+        console.log(`Client ${client.id} stopped.`)
       } catch (error) {
-        console.error('Stop error', error)
+        console.error('Stop error', error.message)
       }
     }
     process.exit()
@@ -90,31 +99,44 @@ export class ClientManager {
   }
 
   private async _getClientConfig(clientName: string): Promise<ClientConfig> {
-    let config = clients[clientName]
+    let config = this._clientConfigs[clientName]
     if (!config) {
       console.warn('Supported clients are', await this.getAvailableClients())
       throw new Error('Unsupported client: ' + clientName)
     }
-    let isValid = validateConfig(config)
-    if (!isValid) {
-      throw new Error('Invalid client config')
-    }
     config = { ...config } // clone before modification
     // convert filter object to function
+    // @ts-ignore
     config.filter = createFilterFunction(config.filter)
     return config
   }
 
-  public addClientConfig(config: ClientConfig) {
-    let isValid = validateConfig(config)
-    if (!isValid) {
-      throw new Error('Invalid client config')
+  public addClientConfig(config: ClientConfig | Array<ClientConfig>) {
+    if (Array.isArray(config)) {
+      for (const _c of config) {
+        this.addClientConfig(_c)
+      }
+      return
+    } 
+    else if(instanceofClientConfig(config)) {
+      let isValid = validateConfig(config)
+      if (!isValid) {
+        throw new Error('Invalid client config')
+      }
+      config = {
+        // @ts-ignore
+        displayName: config.name,
+        entryPoint: 'auto',
+        service: false,
+        ...config
+      }
+      // @ts-ignore
+      this._clientConfigs[config.name] = config
     }
-    clients[config.name] = config
   }
 
   public async getAvailableClients() {
-    return Object.keys(clients)
+    return Object.keys(this._clientConfigs)
   }
 
   public async getClientVersions(clientName: string): Promise<Array<IRelease>> {
@@ -176,12 +198,22 @@ export class ClientManager {
     return destAbs
   }
 
-  public async getClient(clientName: string, version: string = 'latest', {
+  public async getClient(clientSpec: string | ClientConfig, {
+    version = 'latest',
     platform = process.platform,
     listener = undefined,
     cachePath = path.join(process.cwd(), 'cache')
   }: DownloadOptions = {}): Promise<ClientInfo> {
-    const config = await this._getClientConfig(clientName)
+
+    let clientName = typeof clientSpec === 'string' ? clientSpec : clientSpec.name
+
+    if (instanceofClientConfig(clientSpec)) {
+      // this does additional validation and sets default: do NOT use config directly without checks
+      this.addClientConfig(clientSpec)
+    } 
+
+    let config = await this._getClientConfig(clientName)
+
     if (!fs.existsSync(cachePath)) {
       fs.mkdirSync(cachePath, { recursive: true })
     }
@@ -189,15 +221,27 @@ export class ClientManager {
     if (instanceofDockerConfig(config)) {
       // lazy init to avoid crashes for non docker functionality
       this._dockerManager.connect()
-      const imageName = await this._dockerManager.getOrCreateImage(config.name, config.dockerfile, listener)
+      const imageName = await this._dockerManager.getOrCreateImage(config.name, config.dockerimage, {
+        listener
+      })
       if (!imageName) {
         throw new Error('Docker image could not be found or created')
       }
       this._logger.log('image created', imageName)
       // only [a-zA-Z0-9][a-zA-Z0-9_.-] are allowed for container names 
       // but image name can be urls like gcr.io/prysmaticlabs/prysm/validator
+      // Date.now() allows to have multiple instances of one image
+      // const containerName = `ethbinary_${config.name}_container_${Date.now()}`
+      // const containerName = `ethbinary_${config.name}_container_${Date.now()}`
       const containerName = `ethbinary_${config.name}_container`
-      const container = await this._dockerManager.createContainer(imageName, containerName)
+      const overwrite = true
+      const container = await this._dockerManager.createContainer(imageName, containerName, {
+        overwrite,
+        dispose: false, // if containers are disposed they cannot be analyzed afterwards, therefore it is better to clean them on start
+        overwriteEntrypoint: false,
+        autoPort: true,
+        ports: ['8545', '30303', '30303/udp']
+      })
       if (!container) {
         throw new Error('Docker container could not be created')
       }
@@ -213,6 +257,7 @@ export class ClientManager {
         platform,
         filter: config.filter, // string filter e.g. filter 'unstable' excludes geth-darwin-amd64-1.9.14-unstable-6f54ae24 
         cache: cachePath, // avoids download if package is found in cache
+        cacheOnly: version === 'cache', // get latest cached if version = 'cache
         destPath: cachePath, // where to write package + metadata
         listener, // listen to progress events
         extract: false, // extracts all package contents (good for java / python runtime clients without  single binary)
@@ -240,14 +285,7 @@ export class ClientManager {
       this._clients.push(client)
       return client.info()
     }
-    throw new Error(`Client config does not specify how to retrieve client: repository or dockerfile should be set`)
-  }
-
-  public async startClient(clientId: string | ClientInfo, flags: string[] = [], options: ClientStartOptions = {}): Promise<ClientInfo> {
-    const client: IClient = this._findClient(clientId)
-    // add started client to client list
-    await client.start(flags, options)
-    return client.info()
+    throw new Error(`Client config does not specify how to retrieve client: repository or dockerimage should be set`)
   }
 
   private _findClient(clientId: string | ClientInfo) {
@@ -261,6 +299,13 @@ export class ClientManager {
     return client
   }
 
+  public async startClient(clientId: string | ClientInfo, flags: string[] = [], options: ClientStartOptions = {}): Promise<ClientInfo> {
+    const client: IClient = this._findClient(clientId)
+    // add started client to client list
+    await client.start(flags, options)
+    return client.info()
+  }
+
   public async stopClient(clientId: string | ClientInfo) : Promise<ClientInfo> {
     const client: IClient = this._findClient(clientId)
     await client.stop()
@@ -270,19 +315,66 @@ export class ClientManager {
     return client.info()
   }
 
-  public async execute(clientId: string | ClientInfo, command: string, options?: CommandOptions): Promise<Array<string>> {
-    this._logger.verbose('execute on client', clientId)
+  public async executeClient(clientId: string | ClientInfo, command: string, options?: CommandOptions): Promise<Array<string>> {
+    this._logger.verbose('execute on client', clientId, command)
     const client: IClient = this._findClient(clientId)
+    options = {
+      timeout: 30 * 1000,
+      ...options
+    }
     const result = await client.execute(command, options)
     return result
   }
 
-  public async waitForState(clientId: string) {
+  public async whenStateClient(clientId: string | ClientInfo, state: string) : Promise<void>  {
+    throw new Error('not implemented')
+  }
+
+  public async rpcClient() {
 
   }
 
-  public async rpc() {
+  // Single Client convenience API
 
+  // we tell the client manager that we are only using one client -> makes API easier
+  // .start([flags]) instead of .start(clientId, [flags]) 
+  public async setClient(client: ClientInfo, replace = false) {
+    if (this._clientInstance && replace === false) {
+      throw new Error('A client is already set')
+    }
+    this._clientInstance = client
+    return this
+  }
+
+  private _getClientInstance() : ClientInfo {
+    // if client was explicitly set -> use user defined client
+    if (this._clientInstance) {
+      return this._clientInstance
+    }
+    // if only one client in managed clients assume single-client mode -> dangerous
+    else if (this._clients.length === 1) {
+      return this._clients[0].info()
+    } 
+    else if (this._clients.length === 0) {
+      throw new Error('Single client API becomes available after call to getClient()')
+    }
+    throw new Error('You are using the ClientManager in single-client mode with more than one client')
+  }
+
+  public async start(flags: string[] = [], options?: ClientStartOptions): Promise<ClientInfo> {
+    return this.startClient(this._getClientInstance(), flags, options)
+  }
+
+  public async stop() : Promise<ClientInfo>  {
+    return this.stopClient(this._getClientInstance())
+  }
+
+  public async execute(command: string, options?: CommandOptions): Promise<Array<string>> {
+    return this.executeClient(this._getClientInstance(), command, options)
+  }
+
+  public async whenState(state: string) : Promise<void> {
+    return this.whenStateClient(this._getClientInstance(), state)
   }
 
 }
