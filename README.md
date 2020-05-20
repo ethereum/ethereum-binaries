@@ -12,6 +12,10 @@ Fast, easy and secure Ethereum binary management.
 - [x] 🐙 **Version Management**
 - [x] 🌈 **Multi Client Support**
 
+# Docs
+
+Documentation is available at [github.io/ethereum-binaries](https://philipplgh.github.io/ethereum-binaries/#/)
+
 # Supported Clients & Binaries
 
 # Intro
@@ -37,7 +41,3 @@ ethbinary geth@latest --goerli
 Will download the latest version of geth and start geth with a connection to the goerli testnet:
 
 ![Fast Start Gif](r./../img/fast_start.gif?raw=true "Title")
-
-# Docs
-
-Documentation is available at [github.io/ethereum-binaries](https://philipplgh.github.io/ethereum-binaries/#/)
