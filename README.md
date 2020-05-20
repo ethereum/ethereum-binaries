@@ -59,6 +59,8 @@ Will download the latest version of geth and start geth with a connection to the
 
 Commands will auto-detect the operating system and download binaries for the correct platform.
 All client commands support a shorthand `<client name>@<version>`.
+ethbinary supports two special version string: `latest` & `cache`.
+
 
 ### Examples
 
@@ -114,7 +116,7 @@ interface ClientInfo {
 
 Returns the release list for a client.
 
-##### `public async getClient(clientName: string, version: string, options?: DownloadOptions) : Promise<ClientInfo>`
+##### `public async getClient(clientSpec: string | ClientConfig, options?: DownloadOptions) : Promise<ClientInfo>`
 
 Uses a cached client, or downloads a new / updated one / pulls docker image and returns `ClientInfo`.
 If version is `latest` and a newer version than the one on the system exists, it will download the newer version automatically. 
@@ -124,7 +126,7 @@ If the client is distributed as a docker image `binaryPath` will be set to the n
 
 ##### `public async startClient(clientId: string | ClientInfo, version: string, flags?: string[], options?: DownloadOptions) : Promise<ClientInfo>`
 
-Uses `getClient` internally but also starts a new child process for the client binary.
+Uses `getClient` internally but also starts a new child process or container for the client binary.
 
 ##### `public async stopClient(clientId: string | ClientInfo,) : Promise<ClientInfo>`
 
@@ -132,6 +134,10 @@ Stops the process(es) and container(s) associated with a client.
 Throws if no process is found.
 
 # Use with Docker
+
+Docker is great for isolated environments: each container instance has their own file system, networking, and isolated process tree separate from the host.
+This library comes with multiple tools to make interacting with docker easier.
+
 
 ### Clients
 
@@ -202,13 +208,13 @@ The configuration for a Dockerized client has the following properties:
 
 ```typescript
 export interface DockerConfig extends ClientBaseConfig {
-  dockerfile: string;
+  dockerimage: string;
   entryPoint?: string;
   service: boolean;
 }
 ```
 
-#### dockerfile : `path | url`
+#### dockerimage : `path | url`
 `path` a new image will be created based on the locally available `Dockerfile`
 
 `url` the image is pulled from the registry
