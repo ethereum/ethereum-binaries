@@ -3,7 +3,7 @@
 import * as path from 'path'
 import { CLI, Shim } from 'clime'
 import { clientSpecifierToCommand } from './lib'
-import { ClientManager } from '../ClientManager'
+import { MultiClientManager as ClientManager } from '../ClientManager'
 
 const version = require('../../package.json').version
 console.log(`

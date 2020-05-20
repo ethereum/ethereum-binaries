@@ -13,7 +13,7 @@ import { CLIENT_STATE } from './Client/BaseClient'
 
 const DOCKER_PREFIX = 'ethbinary'
 
-export class ClientManager {
+export class MultiClientManager {
 
   private _packageManager: PackageManager
   private _clients: Array<IClient>
@@ -21,13 +21,12 @@ export class ClientManager {
   private _processManager: ProcessManager
   private _logger: Logger
   private _clientConfigs : {[index:string] : ClientConfig}
-  private _clientInstance?: ClientInfo
 
   /**
    * Because a ClientManager instance handle process events like uncaughtException, exit, ..
    * there should only be one instance
    */
-  private static instance : ClientManager
+  private static instance : MultiClientManager
 
   private constructor() {
     this._logger = new Logger()
@@ -85,11 +84,11 @@ export class ClientManager {
     process.exit()
   }
 
-  public static getInstance() : ClientManager {
-    if (!ClientManager.instance) {
-      ClientManager.instance = new ClientManager()
+  public static getInstance() : MultiClientManager {
+    if (!MultiClientManager.instance) {
+      MultiClientManager.instance = new MultiClientManager()
     }
-    return ClientManager.instance
+    return MultiClientManager.instance
   }
 
   public status() {
@@ -315,7 +314,7 @@ export class ClientManager {
     return client.info()
   }
 
-  public async executeClient(clientId: string | ClientInfo, command: string, options?: CommandOptions): Promise<Array<string>> {
+  public async execute(clientId: string | ClientInfo, command: string, options?: CommandOptions): Promise<Array<string>> {
     this._logger.verbose('execute on client', clientId, command)
     const client: IClient = this._findClient(clientId)
     options = {
@@ -326,24 +325,22 @@ export class ClientManager {
     return result
   }
 
-  public async whenStateClient(clientId: string | ClientInfo, state: string) : Promise<void>  {
+  public async whenState(clientId: string | ClientInfo, state: string) : Promise<void>  {
     throw new Error('not implemented')
   }
 
-  public async rpcClient() {
+  public async rpc() {
 
   }
 
-  // Single Client convenience API
+}
 
-  // we tell the client manager that we are only using one client -> makes API easier
-  // .start([flags]) instead of .start(clientId, [flags]) 
-  public async setClient(client: ClientInfo, replace = false) {
-    if (this._clientInstance && replace === false) {
-      throw new Error('A client is already set')
-    }
-    this._clientInstance = client
-    return this
+export class SingleClientManager {
+  private _clientManager: MultiClientManager
+  private _clientInstance?: ClientInfo
+
+  constructor() {
+    this._clientManager = MultiClientManager.getInstance()
   }
 
   private _getClientInstance() : ClientInfo {
@@ -351,30 +348,35 @@ export class ClientManager {
     if (this._clientInstance) {
       return this._clientInstance
     }
-    // if only one client in managed clients assume single-client mode -> dangerous
-    else if (this._clients.length === 1) {
-      return this._clients[0].info()
-    } 
-    else if (this._clients.length === 0) {
-      throw new Error('Single client API becomes available after call to getClient()')
-    }
     throw new Error('You are using the ClientManager in single-client mode with more than one client')
   }
 
+  public async getClientVersions(clientName: string): Promise<Array<IRelease>> {
+    return this._clientManager.getClientVersions(clientName)
+  }
+
+  public async getClient(clientSpec: string | ClientConfig, options?: DownloadOptions): Promise<SingleClientManager> {
+    const client = await this._clientManager.getClient(clientSpec, options)
+    if (this._clientInstance) {
+      throw new Error('A client is already set. If you want to use different client use MultiClientManager instead')
+    }
+    this._clientInstance = client
+    return this
+  }
+
   public async start(flags: string[] = [], options?: ClientStartOptions): Promise<ClientInfo> {
-    return this.startClient(this._getClientInstance(), flags, options)
+    return this._clientManager.startClient(this._getClientInstance(), flags, options)
   }
 
   public async stop() : Promise<ClientInfo>  {
-    return this.stopClient(this._getClientInstance())
+    return this._clientManager.stopClient(this._getClientInstance())
   }
 
   public async execute(command: string, options?: CommandOptions): Promise<Array<string>> {
-    return this.executeClient(this._getClientInstance(), command, options)
+    return this._clientManager.execute(this._getClientInstance(), command, options)
   }
 
   public async whenState(state: string) : Promise<void> {
-    return this.whenStateClient(this._getClientInstance(), state)
+    return this._clientManager.whenState(this._getClientInstance(), state)
   }
-
 }

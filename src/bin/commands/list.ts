@@ -1,5 +1,5 @@
 import {Command, command, metadata} from 'clime'
-import { ClientManager } from '../../ClientManager'
+import { MultiClientManager as ClientManager } from '../../ClientManager'
 
 @command({
   description: 'Lists the supported clients',

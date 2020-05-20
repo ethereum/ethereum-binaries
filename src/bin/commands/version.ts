@@ -2,7 +2,7 @@ import {Command, command, metadata} from 'clime'
 import chalk from 'chalk'
 
 @command({
-  description: 'Prints the ethbinary version number',
+  description: 'Prints the ethbinary version',
 })
 export default class extends Command {
   @metadata
