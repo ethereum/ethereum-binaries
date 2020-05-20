@@ -50,6 +50,7 @@ Will download the latest version of geth and start geth with a connection to the
 
 ![Fast Start Gif](r./../img/fast_start.gif?raw=true "Title")
 
+#### More CLI Examples
 ```shell
 ethbinary list //example: returns [ 'besu', 'ewasm', 'geth', 'prysm' ]
 
@@ -67,11 +68,21 @@ ethbinary start geth@1.9.10 --goerli
 ```
 
 
-### Example: Use Geth for Testing
+### Module Example: Use Geth for Testing
 
 ```javascript
 const { default: cm } = require('ethbinary') // get the client manager instance
-const client = await cm.getClient('geth')
-await cm.startClient(client, ['--goerli'])
-await cm.stopClient(client)
+const clientId = await cm.getClient('geth')
+const geth = await cm.setClient(clientId) // use singe-client api
+await geth.start(['--goerli'])
+await geth.stop()
+```
+
+### Module Example: Multi Client API
+
+```javascript
+const { default: cm } = require('ethbinary') // get the client manager instance
+const clientId = await cm.getClient('geth')
+await cm.startClient(clientId, 'latest', ['--goerli'])
+await cm.stopClient(clientId)
 ```
