@@ -41,7 +41,7 @@ npm install -g ethbinary
 
 # Quickstart 🚀
 
-#### Example: Start Geth 
+#### CLI Examples
 ```shell
 ethbinary geth@latest --goerli
 ```
@@ -49,3 +49,29 @@ ethbinary geth@latest --goerli
 Will download the latest version of geth and start geth with a connection to the goerli testnet:
 
 ![Fast Start Gif](r./../img/fast_start.gif?raw=true "Title")
+
+```shell
+ethbinary list //example: returns [ 'besu', 'ewasm', 'geth', 'prysm' ]
+
+ethbinary download geth // will display version selector
+ethbinary download geth@1.9.10 // short-hand specifier
+ethbinary download geth --clientVersion 1.9.10 // equivalent to above syntax
+
+ethbinary exec geth@latest "version" // the command MUST be one string for the parser to work
+ethbinary exec geth@latest "account new" // is auto-attached to terminal so that stdin for password works
+ethbinary exec geth --clientVersion latest "account new" // verbose syntax
+
+ethbinary start geth // will start latest geth version with mainnet connection (geth default)
+ethbinary start geth --goerli
+ethbinary start geth@1.9.10 --goerli
+```
+
+
+### Example: Use Geth for Testing
+
+```javascript
+const { default: cm } = require('ethbinary') // get the client manager instance
+const client = await cm.getClient('geth')
+await cm.startClient(client, ['--goerli'])
+await cm.stopClient(client)
+```
