@@ -7,6 +7,7 @@ export enum CLIENT_STATE {
   STARTED = 'STARTED',
   STOPPED = 'STOPPED',
   IPC_READY = 'IPC_READY',
+  HTTP_RPC_READY = 'HTTP_RPC_READY',
   ERROR = 'ERROR',
 } 
 
@@ -16,6 +17,7 @@ export abstract class BaseClient extends EventEmitter implements IClient {
   protected _stopped: number = 0
   protected _state: CLIENT_STATE = CLIENT_STATE.INIT
   protected _ipc?: string // store ipc path if it can be detected
+  protected _rpcUrl?: string // store rpc server url if it can be detected
 
   get id() {
     return this._uuid
@@ -24,6 +26,11 @@ export abstract class BaseClient extends EventEmitter implements IClient {
     this._ipc = ipcPath
     this._state = CLIENT_STATE.IPC_READY 
     this.emit('state', CLIENT_STATE.IPC_READY)
+  }
+  set rpc(rpcUrl: string) {
+    this._rpcUrl = rpcUrl
+    this._state = CLIENT_STATE.HTTP_RPC_READY
+    this.emit('state', CLIENT_STATE.HTTP_RPC_READY)
   }
   info(): ClientInfo {
     throw new Error("Method not implemented.")

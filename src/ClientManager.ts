@@ -337,11 +337,26 @@ export class MultiClientManager {
 
   public async whenState(clientId: string | ClientInfo, state: string) : Promise<ClientInfo>  {
     const client: IClient = this._findClient(clientId)
+    let status = client.info()
+    // check if state was already reached
+    if (state === CLIENT_STATE.HTTP_RPC_READY && status.rpcUrl) {
+      return status
+    }
+    if (state === CLIENT_STATE.IPC_READY && status.ipc) {
+      return status
+    }
+    // TODO find more generic solution
+    if (state === CLIENT_STATE.STARTED && ![CLIENT_STATE.STOPPED, CLIENT_STATE.INIT].includes(status.state)) {
+      return status
+    }
+    if (state === status.state) {
+      return status
+    }
+    // if state not yet reached wait for it
+    // TODO allow timeout
     return new Promise((resolve, reject) => {
-      console.log('try to wait for state', state)
       client.on('state', (newState) => {
-        console.log('new state', client.info().state, client.info().ipc)
-        if (newState === CLIENT_STATE.IPC_READY) {
+        if (newState === state) {
           resolve(client.info())
         }
       })
@@ -381,6 +396,11 @@ export class SingleClientManager {
   get ipc() {
     let info = this._clientManager.status(this._clientInstance) as ClientInfo
     return info.ipc
+  }
+
+  get rpcUrl() {
+    let info = this._clientManager.status(this._clientInstance) as ClientInfo
+    return info.rpcUrl
   }
 
   public async getClientVersions(clientName: string): Promise<Array<IRelease>> {

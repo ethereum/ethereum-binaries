@@ -22,6 +22,7 @@ export class BinaryClient extends BaseClient {
       started: this._started,
       stopped: this._stopped,
       ipc: this._ipc,
+      rpcUrl: this._rpcUrl,
       processId: '' + (this._process ? this._process.pid : ''),
       binaryPath: this._binaryPath
     }
@@ -37,13 +38,24 @@ export class BinaryClient extends BaseClient {
 
     // search for IPC path in logs:
     if (log.endsWith('.ipc') || log.includes('IPC endpoint opened')) {
-      // example geth: INFO [05-22|14:50:58.240] IPC endpoint opened                      url=/Users/user/Library/Ethereum/goerli/geth.ipc
+      // example geth: INFO [05-22|14:50:58.240] IPC endpoint opened  url=/Users/user/Library/Ethereum/goerli/geth.ipc
       let ipcPath = log.split('=')[1].trim()
       // fix double escaping
       if (ipcPath.includes('\\\\')) {
         ipcPath = ipcPath.replace(/\\\\/g, '\\')
       }
       this.ipc = ipcPath
+    }
+
+    if (log.includes('HTTP endpoint opened')) {
+      // example INFO [05-22|15:52:31.584] HTTP endpoint opened   url=http://127.0.0.1:8545/ cors= vhosts=localhost
+      const urlKeyVal = log.split(' ').find(l => l.startsWith('url'))
+      if (urlKeyVal) {
+        const [key, url] = urlKeyVal.split('=')
+        if (url) {
+          this.rpc = url.trim()
+        }
+      }
     }
   }
   async start(flags: string[] = [], options: ClientStartOptions = {}): Promise<void> {
