@@ -2,30 +2,36 @@
   "name": "ethbinary",
   "version": "0.5.0",
   "description": "",
-  "main": "index.js",
+  "main": "dist/index.js",
   "scripts": {
     "test": "nyc mocha",
     "start": "node ./dist/index.js",
-    "build": "tsc -p ./tsconfig.json",
+    "build": "tsc -p ./tsconfig.json && yarn copy && chmod +x ./dist/bin/ethbinary.js",
+    "copy": "node ./scripts/copy_assets",
+    "docs": "docsify serve ./docs",
     "watch": "tsc -p ./tsconfig.json -w"
   },
   "author": "",
   "license": "ISC",
   "bin": {
-    "ethbinary": "./dist/bin/ethbin.js"
+    "ethbinary": "./dist/bin/ethbinary.js"
   },
   "dependencies": {
     "boxen": "^4.2.0",
     "chalk": "^4.0.0",
     "cli-progress": "^3.8.2",
     "clime": "^0.5.10",
-    "ethpkg": "^0.9.0"
+    "dockerode": "^3.2.0",
+    "ethpkg": "^0.9.0",
+    "openpgp": "^4.10.4"
   },
   "devDependencies": {
     "@types/chai": "^4.2.11",
     "@types/cli-progress": "^3.7.0",
+    "@types/dockerode": "^2.5.28",
     "@types/mocha": "^7.0.2",
     "@types/node": "^14.0.1",
+    "@types/openpgp": "^4.4.11",
     "chai": "^4.2.0",
     "mocha": "^7.1.2",
     "nyc": "^15.0.1",
