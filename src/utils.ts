@@ -45,7 +45,9 @@ export const createFilterFunction = (filterConfig?: FilterConfig): FilterFunctio
 }
 
 export const validateConfig = (clientConfig: any) => {
-  if (!clientConfig.repository && !clientConfig.dockerfile) {
+  if (!clientConfig) { return false }
+  if (typeof clientConfig.name !== 'string') { return false }
+  if (!clientConfig.repository && !clientConfig.dockerimage) {
     return false
   }
   return true
