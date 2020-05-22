@@ -1,4 +1,4 @@
-import { ClientManager } from "../../ClientManager";
+import { SingleClientManager } from "../../ClientManager";
 import cliProgress from 'cli-progress'
 import boxen from 'boxen'
 import chalk from 'chalk'
@@ -56,7 +56,7 @@ const createProgressListener = () => {
 
 export const downloadClient = async (clientName = 'geth', clientVersion?: string) => {
 
-    const cm = ClientManager.getInstance()
+    const cm = new SingleClientManager()
     if (!clientVersion){
       let versions = await cm.getClientVersions(clientName)
       const prompt = new Select({
@@ -71,7 +71,8 @@ export const downloadClient = async (clientName = 'geth', clientVersion?: string
       clientVersion = selectedVersion
     }
 
-    const client = await cm.getClient(clientName, clientVersion, {
+    const client = await cm.getClient(clientName, {
+      version: clientVersion,
       listener: createProgressListener()
     })
 
@@ -79,13 +80,32 @@ export const downloadClient = async (clientName = 'geth', clientVersion?: string
 }
 
 export const startClient = async (clientName = 'geth', version='latest', flags: string[] = [], options = {}) => {
-  const cm = ClientManager.getInstance()
+  const cm = new SingleClientManager()
   const listener = createProgressListener()
-  const client = await cm.getClient(clientName, version, {
+  const client = await cm.getClient(clientName, {
+    version,
     listener
   })
-  await cm.startClient(client, flags, {
+  await client.start(flags, {
     listener,
     ...options
   })
+}
+
+export const execClient = async (clientName = 'geth', clientVersion='latest', command? : string) => {
+  if (!command) {
+    throw new Error('Invalid command')
+  }
+  const listener = createProgressListener()
+  const cm = new SingleClientManager()
+  const client = await cm.getClient(clientName, { 
+    version: clientVersion,
+    listener 
+  })
+  // result can be ignore because 'inherit' will log everything to stdout
+  const result = await client.execute(command, {
+    listener,
+    stdio: 'inherit'
+  });
+  return result
 }
