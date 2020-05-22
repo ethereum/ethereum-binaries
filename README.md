@@ -69,17 +69,31 @@ ethbinary start geth@1.9.10 --goerli
 ```
 
 
-### Module Example: Use Geth for Testing
+### Module: Minimal Start / Stop
 
 ```javascript
-const { default: cm } = require('ethbinary') // get the client manager instance
-const clientId = await cm.getClient('geth')
-const geth = await cm.setClient(clientId) // use singe-client api
-await geth.start(['--goerli'])
+const { getClient } = require('ethbinary')
+const geth = await getClient('geth')
+await geth.start()
 await geth.stop()
 ```
 
-### Module Example: Multi Client API
+### Module: ethers + ethbinary = ❤️
+
+```javascript
+const { getClient, CLIENT_STATE  } = require('ethbinary')
+const ethers = require('ethers')
+
+const geth = await getClient('geth')
+await geth.start(['--goerli'])
+await geth.whenState(CLIENT_STATE.IPC_READY)
+const provider = new ethers.providers.IpcProvider(geth.ipc)
+const network = await provider.getNetwork() // network { name: 'goerli', chainId: 5, ensAddress: '0x00000000000C2E074eC69A0dFb2997BA6C7d2e1e' }
+// send tx, interact with or deploy contracts here...
+await geth.stop()
+```
+
+### Module: Multi Client API
 
 ```javascript
 const { default: cm } = require('ethbinary') // get the client manager instance
@@ -87,3 +101,5 @@ const clientId = await cm.getClient('geth')
 await cm.startClient(clientId, 'latest', ['--goerli'])
 await cm.stopClient(clientId)
 ```
+
+### More Examples
