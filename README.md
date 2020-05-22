@@ -117,3 +117,5 @@ await cm.stopClient(clientId)
 ```
 
 ### More Examples
+
+check out the other [examples](./examples)
