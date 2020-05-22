@@ -91,7 +91,11 @@ export class MultiClientManager {
     return MultiClientManager.instance
   }
 
-  public status() {
+  public status(clientId?: string | ClientInfo) {
+    if(clientId) {
+      const client = this._findClient(clientId)
+      return client.info()
+    }
     return {
       clients: this._clients.map(c => c.info())
     }
@@ -234,6 +238,7 @@ export class MultiClientManager {
       // const containerName = `ethbinary_${config.name}_container_${Date.now()}`
       const containerName = `ethbinary_${config.name}_container`
       const overwrite = true
+      /*
       const container = await this._dockerManager.createContainer(imageName, containerName, {
         overwrite,
         dispose: false, // if containers are disposed they cannot be analyzed afterwards, therefore it is better to clean them on start
@@ -244,8 +249,13 @@ export class MultiClientManager {
       if (!container) {
         throw new Error('Docker container could not be created')
       }
+      */
+     let container = {
+       id: '123',
+       stop(){}
+     }
       // client is a docker container and client path is name of the docker container
-      const client = new DockerizedClient(container, this._dockerManager, config)
+      const client = new DockerizedClient(container, this._dockerManager, config, imageName)
       this._clients.push(client)
       return client.info()
     }
@@ -325,8 +335,17 @@ export class MultiClientManager {
     return result
   }
 
-  public async whenState(clientId: string | ClientInfo, state: string) : Promise<void>  {
-    throw new Error('not implemented')
+  public async whenState(clientId: string | ClientInfo, state: string) : Promise<ClientInfo>  {
+    const client: IClient = this._findClient(clientId)
+    return new Promise((resolve, reject) => {
+      console.log('try to wait for state', state)
+      client.on('state', (newState) => {
+        console.log('new state', client.info().state, client.info().ipc)
+        if (newState === CLIENT_STATE.IPC_READY) {
+          resolve(client.info())
+        }
+      })
+    })
   }
 
   public async rpc() {
@@ -335,6 +354,14 @@ export class MultiClientManager {
 
 }
 
+/**
+ * MultiClientManager is the main implementation
+ * and it should ONLY RETURN SERIALIZABLE data
+ * SingleClientManager is a convenience wrapper that should
+ * have as little own functionality as possible and no state
+ * so that it can be used e.g. in child processes or webpages that communicate
+ * to the MultiClientManager server API
+ */
 export class SingleClientManager {
   private _clientManager: MultiClientManager
   private _clientInstance?: ClientInfo
@@ -349,6 +376,11 @@ export class SingleClientManager {
       return this._clientInstance
     }
     throw new Error('You are using the ClientManager in single-client mode with more than one client')
+  }
+
+  get ipc() {
+    let info = this._clientManager.status(this._clientInstance) as ClientInfo
+    return info.ipc
   }
 
   public async getClientVersions(clientName: string): Promise<Array<IRelease>> {
@@ -376,7 +408,12 @@ export class SingleClientManager {
     return this._clientManager.execute(this._getClientInstance(), command, options)
   }
 
-  public async whenState(state: string) : Promise<void> {
+  public async whenState(state: string) : Promise<ClientInfo> {
     return this._clientManager.whenState(this._getClientInstance(), state)
   }
+}
+
+export const getClient = async (clientSpec: string | ClientConfig, options?: DownloadOptions) : Promise<SingleClientManager> => {
+  const cm = new SingleClientManager()
+  return cm.getClient(clientSpec, options)
 }
