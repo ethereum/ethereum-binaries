@@ -2,7 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import ethpkg, { PackageManager, IRelease, IPackage, download } from 'ethpkg'
 import { clients as defaultClients } from './client_plugins'
-import { normalizePlatform, uuid, createFilterFunction, validateConfig, verifyBinary } from './utils'
+import { normalizePlatform, uuid, createFilterFunction, validateConfig } from './utils'
 import { ClientInfo, ClientConfig, DownloadOptions, ClientStartOptions, instanceofPackageConfig, instanceofDockerConfig, instanceofClientInfo, CommandOptions, IClient, instanceofClientConfig } from './types'
 import DockerManager from './DockerManager'
 import { Logger } from './Logger'
@@ -29,7 +29,7 @@ export class MultiClientManager {
   private static instance : MultiClientManager
 
   private constructor() {
-    this._logger = new Logger()
+    this._logger = Logger.getInstance()
     this._packageManager = new PackageManager()
     this._dockerManager = new DockerManager(DOCKER_PREFIX)
     this._processManager = new ProcessManager()
@@ -155,52 +155,6 @@ export class MultiClientManager {
     return releases
   }
 
-  private async _extractBinary(pkg: IPackage, binaryName?: string, destPath: string = process.cwd()) {
-    const packagePath = pkg.filePath // only set if loaded from cache
-    const entries = await pkg.getEntries()
-    if (entries.length === 0) {
-      throw new Error('Invalid or empty package')
-    }
-    let binaryEntry = undefined
-    if (binaryName) {
-      binaryEntry = entries.find((e: any) => e.relativePath.endsWith(binaryName))
-    } else {
-      // try to detect binary
-      this._logger.warn('No "binaryName" specified: trying to auto-detect executable within package')
-      // const isExecutable = mode => Boolean((mode & 0o0001) || (mode & 0o0010) || (mode & 0o0100))
-      if (process.platform === 'win32') {
-        binaryEntry = entries.find((e: any) => e.relativePath.endsWith('.exe'))
-      } else {
-        // no heuristic available: pick first
-        binaryEntry = entries[0]
-      }
-    }
-
-    if (!binaryEntry) {
-      throw new Error(
-        'Binary unpack failed: not found in package - try to specify binaryName in your plugin or check if package contains binary'
-      )
-    } else {
-      binaryName = binaryEntry.file.name
-      this._logger.log('auto-detected binary:', binaryName)
-    }
-
-    const destAbs = path.join(destPath, `${binaryName}_${pkg.metadata?.version}`)
-    if (fs.existsSync(destAbs)) {
-      return destAbs
-      // fs.unlinkSync(destAbs)
-    }
-    // IMPORTANT: if the binary already exists the mode cannot be set
-    fs.writeFileSync(
-      destAbs,
-      await binaryEntry.file.readContent(),
-      {
-        mode: parseInt('754', 8) // strict mode prohibits octal numbers in some cases
-      }
-    )
-    return destAbs
-  }
-
   public async getClient(clientSpec: string | ClientConfig, {
     version = 'latest',
     platform = process.platform,
@@ -217,84 +171,29 @@ export class MultiClientManager {
 
     let config = await this._getClientConfig(clientName)
 
+    // make sure cache path exists
     if (!fs.existsSync(cachePath)) {
       fs.mkdirSync(cachePath, { recursive: true })
     }
     platform = normalizePlatform(platform)
+
+    let client
     if (instanceofDockerConfig(config)) {
-      // lazy init to avoid crashes for non docker functionality
-      this._dockerManager.connect()
-      const imageName = await this._dockerManager.getOrCreateImage(config.name, config.dockerimage, {
-        listener
-      })
-      if (!imageName) {
-        throw new Error('Docker image could not be found or created')
-      }
-      this._logger.log('image created', imageName)
-      // only [a-zA-Z0-9][a-zA-Z0-9_.-] are allowed for container names 
-      // but image name can be urls like gcr.io/prysmaticlabs/prysm/validator
-      // Date.now() allows to have multiple instances of one image
-      // const containerName = `ethbinary_${config.name}_container_${Date.now()}`
-      // const containerName = `ethbinary_${config.name}_container_${Date.now()}`
-      const containerName = `ethbinary_${config.name}_container`
-      const overwrite = true
-      /*
-      const container = await this._dockerManager.createContainer(imageName, containerName, {
-        overwrite,
-        dispose: false, // if containers are disposed they cannot be analyzed afterwards, therefore it is better to clean them on start
-        overwriteEntrypoint: false,
-        autoPort: true,
-        ports: ['8545', '30303', '30303/udp']
-      })
-      if (!container) {
-        throw new Error('Docker container could not be created')
-      }
-      */
-     let container = {
-       id: '123',
-       stop(){}
-     }
-      // client is a docker container and client path is name of the docker container
-      const client = new DockerizedClient(container, this._dockerManager, config, imageName)
-      this._clients.push(client)
-      return client.info()
+      client = await DockerizedClient.create(this._dockerManager, config)
     }
     else if (instanceofPackageConfig(config)) {
-      const pkg = await this._packageManager.getPackage(config.repository, {
-        prefix: config.prefix, // server-side filter based on string prefix
-        version: version === 'latest' ? undefined : version, // specific version or version range that should be returned
+      client = await BinaryClient.create(this._packageManager, this._processManager, config, {
+        version,
         platform,
-        filter: config.filter, // string filter e.g. filter 'unstable' excludes geth-darwin-amd64-1.9.14-unstable-6f54ae24 
-        cache: cachePath, // avoids download if package is found in cache
-        cacheOnly: version === 'cache', // get latest cached if version = 'cache
-        destPath: cachePath, // where to write package + metadata
-        listener, // listen to progress events
-        extract: false, // extracts all package contents (good for java / python runtime clients without  single binary)
-        verify: false // ethpkg verification
+        cachePath,
+        listener
       })
-      if (!pkg) {
-        throw new Error('Package not found')
-      }
-
-      // verify package
-      if (pkg.metadata && pkg.metadata.signature) {
-        // TODO call listener
-        const detachedSignature = await download(pkg.metadata.signature)
-        if (!pkg.filePath) {
-          throw new Error('Package could not be located for verification')
-        }
-        if (!config.publicKey) {
-          throw new Error('PackageConfig does not specify public key')
-        }
-        const verificationResult = await verifyBinary(pkg.filePath, config.publicKey, detachedSignature.toString())
-        // console.log('verification result', verificationResult)
-      }
-      const binaryPath = await this._extractBinary(pkg, config.binaryName, cachePath)
-      const client = new BinaryClient(binaryPath, this._processManager, config)
-      this._clients.push(client)
-      return client.info()
+    } else {
+      throw new Error(`Client config does not specify how to retrieve client: repository or dockerimage should be set`)
     }
-    throw new Error(`Client config does not specify how to retrieve client: repository or dockerimage should be set`)
+
+    this._clients.push(client)
+    return client.info()
   }
 
   private _findClient(clientId: string | ClientInfo) {

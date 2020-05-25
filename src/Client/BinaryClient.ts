@@ -1,19 +1,127 @@
+import fs from 'fs'
+import path from 'path'
 import { ChildProcess, spawn } from "child_process"
 import { BaseClient, CLIENT_STATE } from "./BaseClient"
-import { PackageConfig, ClientInfo, ClientStartOptions, CommandOptions } from "../types"
+import { PackageConfig, ClientInfo, ClientStartOptions, CommandOptions, GetClientOptions } from "../types"
 import { ProcessManager } from "../ProcessManager"
 import { PROCESS_EVENTS } from "../events"
+import { PackageManager, IPackage, download } from "ethpkg"
+import { verifyBinary } from '../utils'
+import { Logger } from '../Logger'
+
+const logger = Logger.getInstance()
+
+const extractBinary = async (pkg: IPackage, binaryName?: string, destPath: string = process.cwd()) => {
+  const packagePath = pkg.filePath // only set if loaded from cache
+  const entries = await pkg.getEntries()
+  if (entries.length === 0) {
+    throw new Error('Invalid or empty package')
+  }
+  let binaryEntry = undefined
+  if (binaryName) {
+    binaryEntry = entries.find((e: any) => e.relativePath.endsWith(binaryName))
+  } else {
+    // try to detect binary
+    logger.warn('No "binaryName" specified: trying to auto-detect executable within package')
+    // const isExecutable = mode => Boolean((mode & 0o0001) || (mode & 0o0010) || (mode & 0o0100))
+    if (process.platform === 'win32') {
+      binaryEntry = entries.find((e: any) => e.relativePath.endsWith('.exe'))
+    } else {
+      // no heuristic available: pick first
+      binaryEntry = entries[0]
+    }
+  }
+
+  if (!binaryEntry) {
+    throw new Error(
+      'Binary unpack failed: not found in package - try to specify binaryName in your plugin or check if package contains binary'
+    )
+  } else {
+    binaryName = binaryEntry.file.name
+    logger.log('auto-detected binary:', binaryName)
+  }
+
+  const destAbs = path.join(destPath, `${binaryName}_${pkg.metadata?.version}`)
+  if (fs.existsSync(destAbs)) {
+    return destAbs
+    // fs.unlinkSync(destAbs)
+  }
+  // IMPORTANT: if the binary already exists the mode cannot be set
+  fs.writeFileSync(
+    destAbs,
+    await binaryEntry.file.readContent(),
+    {
+      mode: parseInt('754', 8) // strict mode prohibits octal numbers in some cases
+    }
+  )
+  return destAbs
+}
+
+const verifyBinaryPackage = async (pkg: IPackage, publicKey?: string) => {
+  if (!pkg.metadata || !pkg.metadata.signature) {
+    throw new Error('')
+  }
+  const detachedSignature = await download(pkg.metadata.signature)
+  if (!pkg.filePath) {
+    throw new Error('Package could not be located for verification')
+  }
+  if (!publicKey) {
+    throw new Error('PackageConfig does not specify public key')
+  }
+  const verificationResult = await verifyBinary(pkg.filePath, publicKey, detachedSignature.toString())
+  return verificationResult
+}
 
 export class BinaryClient extends BaseClient {
   private _process?: ChildProcess
 
   constructor(
-    private _binaryPath: string, 
-    private _processManager: ProcessManager, 
+    private _binaryPath: string,
+    private _processManager: ProcessManager,
     private _config: PackageConfig
   ) {
     super()
   }
+
+  public static async create(packageManager: PackageManager, processManager: ProcessManager, config: PackageConfig, {
+    version,
+    platform,
+    cachePath,
+    listener
+  } : GetClientOptions) {
+    const pkg = await packageManager.getPackage(config.repository, {
+      prefix: config.prefix, // server-side filter based on string prefix
+      version: version === 'latest' ? undefined : version, // specific version or version range that should be returned
+      platform,
+      filter: config.filter, // string filter e.g. filter 'unstable' excludes geth-darwin-amd64-1.9.14-unstable-6f54ae24 
+      cache: cachePath, // avoids download if package is found in cache
+      cacheOnly: version === 'cache', // get latest cached if version = 'cache
+      destPath: cachePath, // where to write package + metadata
+      listener, // listen to progress events
+      extract: false, // extracts all package contents (good for java / python runtime clients without  single binary)
+      verify: false // ethpkg verification
+    })
+    if (!pkg) {
+      throw new Error('Package not found')
+    }
+
+    // verify package
+    if (pkg.metadata && pkg.metadata.signature) {
+      // TODO call listener
+      try {
+        const verificationResult = await verifyBinaryPackage(pkg, config.publicKey)
+        console.log('verification result', verificationResult)
+      } catch (error) {
+        console.log('verification failed')        
+      }
+    }
+    const binaryPath = await extractBinary(pkg, config.binaryName, cachePath)
+    const client = new BinaryClient(binaryPath, processManager, config)
+    return client
+  }
+
+
+
   info(): ClientInfo {
     return {
       id: this.id,
@@ -65,13 +173,13 @@ export class BinaryClient extends BaseClient {
       stdio: 'pipe',
       ...options
     }
-    const { listener = () => {} } = options
+    const { listener = () => { } } = options
     listener(PROCESS_EVENTS.CLIENT_START_STARTED, { name: this._config.name, flags })
     this._started = Date.now()
     this._process = this._processManager.spawn(this._uuid, this._binaryPath, [...flags], {
-      stdio: options.stdio ,
+      stdio: options.stdio,
     })
-    const { stdout,  stderr, stdin } = this._process
+    const { stdout, stderr, stdin } = this._process
     if (stdout && stderr) {
       stdout.on('data', this._parseLogs)
       stderr.on('data', this._parseLogs)
@@ -83,7 +191,7 @@ export class BinaryClient extends BaseClient {
     if (!this._process) {
       return
     }
-    const { stdout,  stderr, stdin } = this._process
+    const { stdout, stderr, stdin } = this._process
     if (stdout && stderr) {
       stdout.off('data', this._parseLogs)
       stderr.off('data', this._parseLogs)
@@ -91,7 +199,7 @@ export class BinaryClient extends BaseClient {
     this._processManager.kill('' + this._process.pid)
   }
   async execute(command: string, options: CommandOptions = {}): Promise<string[]> {
-    const flags : string[] = command.split(' ')
+    const flags: string[] = command.split(' ')
     const stdio = options.stdio || 'pipe'
     const _process = await this._processManager.exec(this._uuid, this._binaryPath, [...flags], {
       stdio,
@@ -103,7 +211,7 @@ export class BinaryClient extends BaseClient {
     // this will only work when process spawned with stdio 'pipe'
     const timeout = options.timeout
     const commandLogs: Array<string> = []
-    const { stdout,  stderr, stdin } = _process
+    const { stdout, stderr, stdin } = _process
     if (stdout && stderr) {
       const onData = (data: any) => {
         const log = data.toString()
