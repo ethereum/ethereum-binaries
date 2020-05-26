@@ -179,7 +179,11 @@ export class MultiClientManager {
 
     let client
     if (instanceofDockerConfig(config)) {
-      client = await DockerizedClient.create(this._dockerManager, config)
+      client = await DockerizedClient.create(this._dockerManager, config, {
+        version,
+        listener
+        // platform and cache not relevant for docker
+      })
     }
     else if (instanceofPackageConfig(config)) {
       client = await BinaryClient.create(this._packageManager, this._processManager, config, {
@@ -231,6 +235,20 @@ export class MultiClientManager {
       ...options
     }
     const result = await client.execute(command, options)
+    return result
+  }
+
+  public async run(clientId: string | ClientInfo, command: string, options?: CommandOptions): Promise<Array<string>> {
+    this._logger.verbose('run on client', clientId, command)
+    const client: IClient = this._findClient(clientId)
+    if (client.info().type !== 'docker') {
+      throw new Error('run is only available for docker clients')
+    }
+    options = {
+      timeout: 30 * 1000,
+      ...options
+    }
+    const result = await (<DockerizedClient>client).run(command, options)
     return result
   }
 
@@ -325,6 +343,10 @@ export class SingleClientManager {
 
   public async execute(command: string, options?: CommandOptions): Promise<Array<string>> {
     return this._clientManager.execute(this._getClientInstance(), command, options)
+  }
+
+  public async run(command: string, options?: CommandOptions): Promise<Array<string>> {
+    return this._clientManager.run(this._getClientInstance(), command, options)
   }
 
   public async whenState(state: string) : Promise<ClientInfo> {
