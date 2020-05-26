@@ -51,7 +51,7 @@ Will download the latest version of geth and start geth with a connection to the
 
 # Examples
 
-### CLI Examples
+## CLI
 ```shell
 ethbinary list //example: returns [ 'besu', 'ewasm', 'geth', 'prysm' ]
 
@@ -68,8 +68,8 @@ ethbinary start geth --goerli
 ethbinary start geth@1.9.10 --goerli
 ```
 
-
-### Module: Minimal Start / Stop
+## Module
+### Minimal Start / Stop
 
 ```javascript
 const { getClient } = require('ethbinary')
@@ -78,7 +78,7 @@ await geth.start()
 await geth.stop()
 ```
 
-### Module: ethers + ethbinary = ❤️
+### ethers + ethbinary = ❤️
 
 #### Ipc Provider
 
@@ -107,7 +107,7 @@ const network = await provider.getNetwork() // network { chainId: 1337, name: 'u
 await geth.stop()
 ```
 
-### Module: Multi Client API
+### Multi Client API
 
 ```javascript
 const { default: cm } = require('ethbinary') // get the client manager instance
