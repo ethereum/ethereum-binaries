@@ -25,6 +25,12 @@ Fast, easy and secure Ethereum binary management.
 Documentation is available at [github.io/ethereum-binaries](https://philipplgh.github.io/ethereum-binaries/#/)
 
 # Supported Clients & Binaries
+<p>
+  <figure>
+    <img align="center" height="100" src="https://geth.ethereum.org/static/images/mascot.png" alt="geth logo">
+    <figcaption>Geth</figcaption>
+  </figure>
+</p>
 
 # Intro
 
@@ -47,7 +53,7 @@ ethbinary geth@latest --goerli
 
 Will download the latest version of geth and start geth with a connection to the goerli testnet:
 
-![Fast Start Gif](r./../img/fast_start.gif?raw=true "Title")
+![Fast Start Gif](./img/fast_start.gif?raw=true)
 
 # Examples
 
@@ -119,3 +125,73 @@ await cm.stopClient(clientId)
 ### More Examples
 
 check out the other [examples](./examples)
+
+# Extension
+
+ethbinary was created with extension in mind.
+If your client is not (yet) supported, chances are good you can still make use of this module and benefit from all of its helpers:
+Some ad-hoc integrations will just magically work out of the box (more likely, if your project follows best practices).
+Some integrations require a little extra work.
+
+This is an example how a raw binary can be added on the fly in case it's not available:
+
+```typescript
+const cm = new SingleClientManager()
+const clientConfig = { name: 'prysm.validator', repository: 'https://github.com/prysmaticlabs/prysm', filter: ({ fileName }) => fileName.includes('validator') }
+const validator = await cm.getClient(clientConfig, {
+  version: '1.0.0-alpha.6',
+  isPackaged: false,
+})
+```
+
+This is the same example, written in a rather verbose but detailed style (e.g. during development):
+
+```typescript
+const cm = new SingleClientManager()
+
+// let's assume prysm is not supported..
+// we add a new (minimal) config first 
+// see docs or ./client-plugins for available configurations and properties
+cm.addClientConfig({
+  name: 'prysm.validator',
+  repository: 'github:prysmaticlabs/prysm' // or 'https://github.com/prysmaticlabs/prysm'
+  // dockerimage: 'gcr.io/prysmaticlabs/prysm/validator', // <= if it's a dockerized client
+})
+
+// now, we can already use methods like getClient, getClientVersions etc..
+// most of the time we are done here. but let's try a manual integration
+// prysm binaries are not packaged, but uploaded as raw binaries
+// we opt-out of the packaged binary flow with `packagesOnly: false` and take care of release assets ourselves
+// we will now get all release assets from the prysm github repository, ordered by latest version (if this information can be extracted)
+const versions = await cm.getClientVersions({
+  packagesOnly: false // prysm binaries are not packaged => return raw assets
+})
+
+// prysm assets contain .sig, .sha256, .exe files among other things
+// if we want the latest binary we can just search e.g. for the first file with .exe or no extension 
+// but let's pretend there is a bug in the .beta.8 so we search for .beta.6
+const latest = versions.find(release => {
+  const ext = getFileExtension(release.fileName)
+  const hasBinaryExtension = (ext === undefined || ext === '.exe')
+  return hasBinaryExtension && release.fileName.includes('validator') && release.version === '1.0.0-alpha.6'
+})
+
+// here, we could check our cache if the binary already exists...
+const clientPath = `path/to/${latest.fileName}`
+
+// to keep our dependency footprint small we can use the re-exported ethpkg module
+// which is the package manager used internally by ethbinary to manage (find, download, extract, verify...) assets
+const data = await ethpkg.download(_url, onProgress)
+fs.writeFileSync(clientPath, data, {
+  mode: parseInt('754', 8) // make sure binary is executable
+})
+
+// almost done: we create a client instance based on the binary 
+const validator = await cm.getBinaryClient(clientPath)
+
+// that's it - we can now interact with a lifecycle managed binary :tada: 
+const version = await validator.execute(`--version`)
+const result = await validator.execute(`accounts create -keystore-path "${__dirname}" --password="${password}"`)
+// ...
+
+```

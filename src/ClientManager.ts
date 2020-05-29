@@ -2,14 +2,15 @@ import fs from 'fs'
 import path from 'path'
 import ethpkg, { PackageManager, IRelease, IPackage, download } from 'ethpkg'
 import { clients as defaultClients } from './client_plugins'
-import { normalizePlatform, uuid, createFilterFunction, validateConfig } from './utils'
-import { ClientInfo, ClientConfig, DownloadOptions, ClientStartOptions, instanceofPackageConfig, instanceofDockerConfig, instanceofClientInfo, CommandOptions, IClient, instanceofClientConfig } from './types'
+import { normalizePlatform, uuid, createFilterFunction, validateConfig, extractPlatformFromString, getFileExtension } from './utils'
+import { ClientInfo, ClientConfig, DownloadOptions, ClientStartOptions, instanceofPackageConfig, instanceofDockerConfig, instanceofClientInfo, CommandOptions, IClient, instanceofClientConfig, PackageConfig, ReleaseFilterOptions } from './types'
 import DockerManager from './DockerManager'
 import { Logger } from './Logger'
 import { ProcessManager } from './ProcessManager'
 import { DockerizedClient } from './Client/DockerizedClient'
 import { BinaryClient } from './Client/BinaryClient'
 import { CLIENT_STATE } from './Client/BaseClient'
+import { PROCESS_EVENTS } from './events'
 
 const DOCKER_PREFIX = 'ethbinary'
 
@@ -20,13 +21,13 @@ export class MultiClientManager {
   private _dockerManager: DockerManager
   private _processManager: ProcessManager
   private _logger: Logger
-  private _clientConfigs : {[index:string] : ClientConfig}
+  private _clientConfigs: { [index: string]: ClientConfig }
 
   /**
    * Because a ClientManager instance handle process events like uncaughtException, exit, ..
    * there should only be one instance
    */
-  private static instance : MultiClientManager
+  private static instance: MultiClientManager
 
   private constructor() {
     this._logger = Logger.getInstance()
@@ -70,7 +71,7 @@ export class MultiClientManager {
   private async _cleanup() {
     const runningClients = this._clients.filter(client => client.info().state === CLIENT_STATE.STARTED)
     // TODO stop running docker containers or kill processes
-    console.log('INFO Program will exit - try to stop running clients: '+runningClients.length)
+    console.log('INFO Program will exit - try to stop running clients: ' + runningClients.length)
     for (const client of runningClients) {
       try {
         const info = client.info()
@@ -84,7 +85,7 @@ export class MultiClientManager {
     process.exit()
   }
 
-  public static getInstance() : MultiClientManager {
+  public static getInstance(): MultiClientManager {
     if (!MultiClientManager.instance) {
       MultiClientManager.instance = new MultiClientManager()
     }
@@ -92,7 +93,7 @@ export class MultiClientManager {
   }
 
   public status(clientId?: string | ClientInfo) {
-    if(clientId) {
+    if (clientId) {
       const client = this._findClient(clientId)
       return client.info()
     }
@@ -109,6 +110,7 @@ export class MultiClientManager {
     }
     config = { ...config } // clone before modification
     // convert filter object to function
+    // TODO move to add config
     // @ts-ignore
     config.filter = createFilterFunction(config.filter)
     return config
@@ -120,8 +122,8 @@ export class MultiClientManager {
         this.addClientConfig(_c)
       }
       return
-    } 
-    else if(instanceofClientConfig(config)) {
+    }
+    else if (instanceofClientConfig(config)) {
       let isValid = validateConfig(config)
       if (!isValid) {
         throw new Error('Invalid client config')
@@ -142,24 +144,50 @@ export class MultiClientManager {
     return Object.keys(this._clientConfigs)
   }
 
-  public async getClientVersions(clientName: string): Promise<Array<IRelease>> {
+  public async getClientVersions(clientName: string, {
+    platform = (<string>process.platform),
+    packagesOnly = true,
+    version = undefined
+  }: ReleaseFilterOptions = {}): Promise<Array<IRelease>> {
     const config = await this._getClientConfig(clientName)
     if (!instanceofPackageConfig(config)) {
       // TODO handle docker versions
       return []
     }
-    const releases = await this._packageManager.listPackages(config.repository, {
+    let releases = await this._packageManager.listPackages(config.repository, {
       prefix: config.prefix,
-      filter: config.filter
+      filter: config.filter,
+      version, // apply version or version range filter
+      packagesOnly, // dangerous mode: return not packaged assets as well
     })
+
+    if (!packagesOnly) {
+      // filter binaries only
+      releases = releases.filter(release => {
+        const ext = getFileExtension(release.fileName)
+        const hasBinaryExtension = ext === undefined || (process.platform === 'win32' && ext === '.exe')
+        return hasBinaryExtension
+      })
+    }
+
+    if (platform) {
+      platform = normalizePlatform(platform)
+      // filter releases for different platforms
+      releases = releases.filter(release => {
+        const releasePlatform = extractPlatformFromString(release.fileName)
+        return releasePlatform !== undefined && (releasePlatform === platform)
+      })
+    }
+
     return releases
   }
 
   public async getClient(clientSpec: string | ClientConfig, {
     version = 'latest',
     platform = process.platform,
-    listener = undefined,
-    cachePath = path.join(process.cwd(), 'cache')
+    listener = () => {},
+    cachePath = path.join(process.cwd(), 'cache'),
+    isPackaged = true
   }: DownloadOptions = {}): Promise<ClientInfo> {
 
     let clientName = typeof clientSpec === 'string' ? clientSpec : clientSpec.name
@@ -167,7 +195,7 @@ export class MultiClientManager {
     if (instanceofClientConfig(clientSpec)) {
       // this does additional validation and sets default: do NOT use config directly without checks
       this.addClientConfig(clientSpec)
-    } 
+    }
 
     let config = await this._getClientConfig(clientName)
 
@@ -186,16 +214,79 @@ export class MultiClientManager {
       })
     }
     else if (instanceofPackageConfig(config)) {
-      client = await BinaryClient.create(this._packageManager, this._processManager, config, {
-        version,
-        platform,
-        cachePath,
-        listener
-      })
+
+      if (isPackaged === false) {
+        // this handles already version, binary and platform filtering
+        let releases = await this.getClientVersions(clientName, {
+          version,
+          packagesOnly: false
+        })
+
+        releases = releases.filter(release => release.fileName !== undefined)
+
+        const release = releases.shift()
+
+        if (!release) {
+          throw new Error('Specified binary could not be found')
+        }
+
+        let binaryPath = path.resolve(cachePath, release.fileName)
+        // check cache
+        if (!fs.existsSync(binaryPath)) { // download binary
+
+          const { location } = release // get download url
+          if (location === undefined) {
+            throw new Error('Cannot download binary - undefined download url')
+          }
+          // wrap progress  listener
+          let progress = 0
+          const onProgress = (p: number) => {
+            const progressNew = Math.floor(p * 100);
+            if (progressNew > progress) {
+              progress = progressNew;
+              listener(PROCESS_EVENTS.DOWNLOAD_PROGRESS, { progress, release, size: release.size })
+            }
+          }
+          listener(PROCESS_EVENTS.DOWNLOAD_STARTED, { location, release })
+          const data = await download(location, onProgress)
+          listener(PROCESS_EVENTS.DOWNLOAD_FINISHED, { location, size: data.length, release })
+
+          fs.writeFileSync(
+            binaryPath,
+            data,
+            {
+              mode: parseInt('754', 8) // strict mode prohibits octal numbers in some cases
+            }
+          )
+        }
+
+        client = new BinaryClient(binaryPath, this._processManager, config)
+
+      } else {
+        client = await BinaryClient.create(this._packageManager, this._processManager, config, {
+          version,
+          platform,
+          cachePath,
+          isPackaged,
+          listener
+        })
+      }
     } else {
       throw new Error(`Client config does not specify how to retrieve client: repository or dockerimage should be set`)
     }
 
+    this._clients.push(client)
+    return client.info()
+  }
+
+  // creates an "ad-hoc" client for existing binaries
+  public async getBinaryClient(binaryPath: string): Promise<ClientInfo> {
+    if (!fs.existsSync(binaryPath)) {
+      throw new Error('Binary does not exist: ' + binaryPath)
+    }
+    const name = path.basename(binaryPath)
+    const config: PackageConfig = { name, displayName: name, repository: path.dirname(binaryPath) }
+    const client = new BinaryClient(binaryPath, this._processManager, config)
     this._clients.push(client)
     return client.info()
   }
@@ -211,14 +302,17 @@ export class MultiClientManager {
     return client
   }
 
-  public async startClient(clientId: string | ClientInfo, flags: string[] = [], options: ClientStartOptions = {}): Promise<ClientInfo> {
+  public async startClient(clientId: string | ClientInfo, flags: string | string[] = [], options: ClientStartOptions = {}): Promise<ClientInfo> {
+    if (typeof flags === 'string') {
+      flags = flags.split(' ')
+    }
     const client: IClient = this._findClient(clientId)
     // add started client to client list
     await client.start(flags, options)
     return client.info()
   }
 
-  public async stopClient(clientId: string | ClientInfo) : Promise<ClientInfo> {
+  public async stopClient(clientId: string | ClientInfo): Promise<ClientInfo> {
     const client: IClient = this._findClient(clientId)
     await client.stop()
     // remove stopped client from client list // TODO make setting?
@@ -252,7 +346,7 @@ export class MultiClientManager {
     return result
   }
 
-  public async whenState(clientId: string | ClientInfo, state: string) : Promise<ClientInfo>  {
+  public async whenState(clientId: string | ClientInfo, state: string): Promise<ClientInfo> {
     const client: IClient = this._findClient(clientId)
     let status = client.info()
     // check if state was already reached
@@ -297,17 +391,23 @@ export class MultiClientManager {
 export class SingleClientManager {
   private _clientManager: MultiClientManager
   private _clientInstance?: ClientInfo
+  private _config?: ClientConfig
 
   constructor() {
     this._clientManager = MultiClientManager.getInstance()
   }
 
-  private _getClientInstance() : ClientInfo {
+  private _getClientInstance(): ClientInfo {
     // if client was explicitly set -> use user defined client
     if (this._clientInstance) {
       return this._clientInstance
     }
     throw new Error('You are using the ClientManager in single-client mode with more than one client')
+  }
+
+  public addClientConfig(config: ClientConfig /* only allow one config to be added */) {
+    this._config = config
+    return this._clientManager.addClientConfig(config)
   }
 
   get ipc() {
@@ -320,15 +420,35 @@ export class SingleClientManager {
     return info.rpcUrl
   }
 
-  public async getClientVersions(clientName: string): Promise<Array<IRelease>> {
-    return this._clientManager.getClientVersions(clientName)
+  public async getClientVersions(clientName?: string, options?: any): Promise<Array<IRelease>> {
+    // overload: public async getClientVersions(options?: any)
+    if (typeof clientName === 'object') {
+      options = clientName
+    }
+    if (clientName !== 'string') {
+      if (this._config) {
+        clientName = this._config.name
+      } else {
+        throw new Error('Versions for which client? Client name was not provided')
+      }
+    }
+    return this._clientManager.getClientVersions(clientName, options)
   }
 
   public async getClient(clientSpec: string | ClientConfig, options?: DownloadOptions): Promise<SingleClientManager> {
-    const client = await this._clientManager.getClient(clientSpec, options)
     if (this._clientInstance) {
-      throw new Error('A client is already set. If you want to use different client use MultiClientManager instead')
+      throw new Error('A client is already set. If you want to use different clients use MultiClientManager instead')
     }
+    const client = await this._clientManager.getClient(clientSpec, options)
+    this._clientInstance = client
+    return this
+  }
+
+  public async getBinaryClient(binaryPath: string): Promise<SingleClientManager> {
+    if (this._clientInstance) {
+      throw new Error('A client is already set. If you want to use different clients use MultiClientManager instead')
+    }
+    const client = await this._clientManager.getBinaryClient(binaryPath)
     this._clientInstance = client
     return this
   }
@@ -337,7 +457,7 @@ export class SingleClientManager {
     return this._clientManager.startClient(this._getClientInstance(), flags, options)
   }
 
-  public async stop() : Promise<ClientInfo>  {
+  public async stop(): Promise<ClientInfo> {
     return this._clientManager.stopClient(this._getClientInstance())
   }
 
@@ -349,12 +469,12 @@ export class SingleClientManager {
     return this._clientManager.run(this._getClientInstance(), command, options)
   }
 
-  public async whenState(state: string) : Promise<ClientInfo> {
+  public async whenState(state: string): Promise<ClientInfo> {
     return this._clientManager.whenState(this._getClientInstance(), state)
   }
 }
 
-export const getClient = async (clientSpec: string | ClientConfig, options?: DownloadOptions) : Promise<SingleClientManager> => {
+export const getClient = async (clientSpec: string | ClientConfig, options?: DownloadOptions): Promise<SingleClientManager> => {
   const cm = new SingleClientManager()
   return cm.getClient(clientSpec, options)
 }
