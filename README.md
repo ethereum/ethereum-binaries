@@ -130,7 +130,9 @@ check out the other [examples](./examples)
 
 ethbinary was created with extension in mind.
 If your client is not (yet) supported, chances are good you can still make use of this module and benefit from all of its helpers:
+
 Some ad-hoc integrations will just magically work out of the box (more likely, if your project follows best practices).
+
 Some integrations require a little extra work.
 
 This is an example how a GitHub hosted binary can be added on the fly in case it's not available:
