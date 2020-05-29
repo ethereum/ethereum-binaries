@@ -187,7 +187,7 @@ const clientPath = `path/to/${latest.fileName}`
 
 // to keep our dependency footprint small we can use the re-exported ethpkg module
 // which is the package manager used internally by ethbinary to manage (find, download, extract, verify...) assets
-const data = await ethpkg.download(_url, onProgress)
+const data = await ethpkg.download(latest.location, onProgress)
 fs.writeFileSync(clientPath, data, {
   mode: parseInt('754', 8) // make sure binary is executable
 })
