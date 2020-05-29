@@ -26,14 +26,14 @@ Documentation is available at [github.io/ethereum-binaries](https://philipplgh.g
 
 # Supported Clients & Binaries
 <p>
-  <figure style="display: inline-block">
+  <div style="display: inline-block; margin: 30px">
     <img align="center" height="100" src="https://geth.ethereum.org/static/images/mascot.png" alt="geth logo">
-    <figcaption style="text-align: center; border: 1px solid lightgrey; margin-top: 5px">Geth</figcaption>
-  </figure>
-  <figure style="display: inline-block">
+    <p style="text-align: center; border: 1px solid lightgrey; margin-top: 5px">Geth</p>
+  </div>
+  <div style="display: inline-block;  margin: 30px"">
     <img align="center" height="100" src="https://prylabs.net/assets/stripedprysm.svg" alt="prysm logo">
-    <figcaption style="text-align: center; border: 1px solid lightgrey; margin-top: 5px">Prysm</figcaption>
-  </figure>
+    <p style="text-align: center; border: 1px solid lightgrey; margin-top: 5px">Prysm</p>
+  </div>
 </p>
 
 **Supported clients can be referenced by their name and used directly. For all other binaries see  [`Extension`](#extension)**
