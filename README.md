@@ -32,6 +32,8 @@ Documentation is available at [github.io/ethereum-binaries](https://philipplgh.g
   </figure>
 </p>
 
+**Supported clients can be referenced with their name and used directly. For all other binaries see  [`Extension`](#extension)**
+
 # Intro
 
 Binaries are an integral part of the Ethereum ecosystem. There are many amazing tools (Clef, ZoKrates, Puppeth, ...) that go even beyond the different client implementations (Geth, Prysm, Besu, Nethermind, ...).
