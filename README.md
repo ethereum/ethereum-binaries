@@ -26,13 +26,17 @@ Documentation is available at [github.io/ethereum-binaries](https://philipplgh.g
 
 # Supported Clients & Binaries
 <p>
-  <figure>
+  <figure style="display: inline-block">
     <img align="center" height="100" src="https://geth.ethereum.org/static/images/mascot.png" alt="geth logo">
-    <figcaption>Geth</figcaption>
+    <figcaption style="text-align: center; border: 1px solid lightgrey; margin-top: 5px">Geth</figcaption>
+  </figure>
+  <figure style="display: inline-block">
+    <img align="center" height="100" src="https://prylabs.net/assets/stripedprysm.svg" alt="prysm logo">
+    <figcaption style="text-align: center; border: 1px solid lightgrey; margin-top: 5px">Prysm</figcaption>
   </figure>
 </p>
 
-**Supported clients can be referenced with their name and used directly. For all other binaries see  [`Extension`](#extension)**
+**Supported clients can be referenced by their name and used directly. For all other binaries see  [`Extension`](#extension)**
 
 # Intro
 
@@ -177,7 +181,7 @@ const versions = await cm.getClientVersions({
 
 // prysm assets contain .sig, .sha256, .exe files among other things
 // if we want the latest binary we can just search e.g. for the first file with .exe or no extension 
-// but let's pretend there is a bug in the .beta.8 so we search for .beta.6
+// but let's say there is a bug in the .beta.8 so we search for .beta.6
 const latest = versions.find(release => {
   const ext = getFileExtension(release.fileName)
   const hasBinaryExtension = (ext === undefined || ext === '.exe')
