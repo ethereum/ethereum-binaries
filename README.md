@@ -133,11 +133,15 @@ If your client is not (yet) supported, chances are good you can still make use o
 Some ad-hoc integrations will just magically work out of the box (more likely, if your project follows best practices).
 Some integrations require a little extra work.
 
-This is an example how a raw binary can be added on the fly in case it's not available:
+This is an example how a GitHub hosted binary can be added on the fly in case it's not available:
 
 ```typescript
 const cm = new SingleClientManager()
-const clientConfig = { name: 'prysm.validator', repository: 'https://github.com/prysmaticlabs/prysm', filter: ({ fileName }) => fileName.includes('validator') }
+const clientConfig = { 
+  name: 'prysm.validator', 
+  repository: 'https://github.com/prysmaticlabs/prysm', 
+  filter: ({ fileName }) => fileName.includes('validator') 
+}
 const validator = await cm.getClient(clientConfig, {
   version: '1.0.0-alpha.6',
   isPackaged: false,
@@ -162,7 +166,7 @@ cm.addClientConfig({
 // most of the time we are done here. but let's try a manual integration
 // prysm binaries are not packaged, but uploaded as raw binaries
 // we opt-out of the packaged binary flow with `packagesOnly: false` and take care of release assets ourselves
-// we will now get all release assets from the prysm github repository, ordered by latest version (if this information can be extracted)
+// we will now get all release assets from the prysm github repository, ordered by latest version
 const versions = await cm.getClientVersions({
   packagesOnly: false // prysm binaries are not packaged => return raw assets
 })
