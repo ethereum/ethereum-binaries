@@ -27,6 +27,23 @@ export const collectLogs = (dockerStream: any) => {
   })
 }
 
+export class WritableMemoryStream extends stream.Writable {
+  buffer: Buffer;
+  data : any[] = []
+  constructor(){
+    super()
+    this.buffer = Buffer.from('')
+    this.data = []
+    this.once('finish', () => {
+      this.buffer = this.data.length === 1 ? this.data.pop() : Buffer.concat(this.data)
+    })
+  }
+  _write (chunk : any, enc : string, cb : Function) {
+    this.data.push(chunk)
+    cb()
+  }
+}
+
 export const attachStdOut = (stdout: any, dockerStream: any, modem: any, onResize: any) => {
   if (stdout instanceof Array) {
     dockerStream.on('end', function () {
