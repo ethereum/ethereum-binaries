@@ -223,8 +223,11 @@ Where a sequence of commands ins executed with `.execute`
 ### Hybrid
 
 Of course, some binaries can implement multiple behaviors and act as a service, execute commands and provide server functionality.
+
 `geth` is such an example:
+
 `geth account new` - issues a command which can also be interactive e.g. ask for password
+
 `geth` will start the service
 
 
