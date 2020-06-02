@@ -6,6 +6,9 @@ import { StateListener } from './types';
 import ethpkg, { IPackage } from 'ethpkg'
 import { PROCESS_EVENTS } from './events';
 import { Stream } from 'stream';
+import { attachStdOut, attachStdin, detachStdout, detachStdin, WritableMemoryStream } from './DockerUtils';
+
+export const isDirPath = (str: string) => !path.extname(str)
 
 const STATUS = {
   DOWNLOAD_COMPLETE: 'Download complete',
@@ -17,10 +20,12 @@ const STATUS = {
 }
 
 export interface ContainerConfig {
-  dispose?: boolean;
-  ports?: string[];
-  overwriteEntrypoint?: boolean;
-  autoPort?: boolean;
+  dispose?: boolean; // destroy container after process finished
+  ports?: string[]; // port mapping for container
+  overwrite?: boolean; // if container with name exists -> remove
+  overwriteEntrypoint?: boolean; // use /bin/sh instead of entrypoint
+  autoPort?: boolean; // map ports to any available ports
+  cmd?: string[]
 }
 
 export interface GetImageOptions {
@@ -28,9 +33,13 @@ export interface GetImageOptions {
 }
 
 export default class DockerManager {
-  private _docker: any;
+  public _docker: any;
   constructor(private prefix = 'ethbinary') {
 
+  }
+
+  public isConnected() {
+    return this._docker !== undefined
   }
 
   public connect() {
@@ -185,11 +194,13 @@ export default class DockerManager {
     return container.remove({ force: true })
   }
 
-  public async createContainer(imageName: string, containerName: string, overwriteContainer = false, {
+  public async createContainer(imageName: string, containerName: string, {
+    overwrite = false,
     dispose = false,
     autoPort = false,
-    overwriteEntrypoint = true,
-    ports = []
+    overwriteEntrypoint = false,
+    ports = [],
+    cmd = undefined
   } : ContainerConfig = {}) {
     // TODO  handle 'OCI runtime create failed: container_linux.go:346: starting container process caused "exec: \\"/bin/bash\\": stat /bin/bash: no such file or directory": unknown'
     // TODO  handle no such container - No such image: golang:1.13-alpine 
@@ -197,7 +208,7 @@ export default class DockerManager {
 
     // TODO save original entrypoint
     let container = await this.getContainer(containerName, stopIfRunning)
-    if (!container || overwriteContainer) {
+    if (!container || overwrite) {
       if (container) {
         await this.removeContainer(container)
       }
@@ -211,6 +222,7 @@ export default class DockerManager {
         // The -it runs Docker interactively (so you get a pseudo-TTY with STDIN)
         Tty: true, // keeps container running
         OpenStdin: true,
+        // StdinOnce: false,
         // FIXME a problem that probably occurs is that ports get configured by the user in between init() and start()
         ExposedPorts: { },
         HostConfig: {
@@ -218,6 +230,7 @@ export default class DockerManager {
           AutoRemove: dispose,
           PortBindings: {}
         },
+        Cmd: cmd
       }
 
       if (overwriteEntrypoint) {
@@ -254,8 +267,10 @@ export default class DockerManager {
       const image = await this._docker.getImage(imageName)
       const info = await image.inspect()
       const entryPoint = info.Config.Entrypoint
-      // @ts-ignore
-      container.originalEntrypoint = Array.isArray(entryPoint) ? entryPoint[0] : entryPoint
+      if (entryPoint) {
+        // @ts-ignore
+        container.originalEntrypoint = Array.isArray(entryPoint) ? entryPoint[0] : entryPoint
+      }
     }
     return container
   }
@@ -285,4 +300,112 @@ export default class DockerManager {
     return undefined
   }
 
+  // https://github.com/apocas/dockerode/blob/master/examples/run_stdin.js
+  // https://github.com/apocas/dockerode/blob/master/lib/docker.js#L1442
+  public async run(imageName: string, cmd: string[], {
+    stdio = 'pipe',
+    volume = undefined
+  } : any = {}) {
+
+    const optsc = {
+      'Hostname': '',
+      'User': '',
+      OpenStdin: true,
+      AttachStdin: true,
+      AttachStdout: true,
+      AttachStderr: true,
+      StdinOnce: true,
+      'Tty': stdio === 'inherit',
+      'Env': null,
+      'Cmd': cmd, // this will overwrite the entrypoint
+      'Image': imageName,
+      'Volumes': {}, // use binds instead
+      'VolumesFrom': [],
+      HostConfig: {
+        // Automatically remove the container when the container's process exits (e.g. when stopped).
+        AutoRemove: true,
+        Binds: volume ? [ volume ] : undefined
+      },
+    }
+
+    const container = await this._docker.createContainer(optsc)
+
+    if (!container) {
+      throw new Error('Could not create container')
+    }
+
+    const onResize = async () => {
+      let dimensions = {
+        h: process.stdout.rows,
+        w: process.stderr.columns
+      };
+      if (dimensions.h != 0 && dimensions.w != 0) {
+        await container.resize(dimensions);
+      }
+    }
+
+    const dockerStream = await container.attach({
+      stream: true,
+      stdin: true,
+      stdout: true,
+      stderr: true,
+    })
+
+    let isRaw = process.stdin.isRaw // save for restore
+    let bufferStream = new WritableMemoryStream()
+    if (stdio === 'inherit') {
+      attachStdOut(process.stdout, dockerStream, container.modem, onResize)
+      // attachStdOut(attachStream, dockerStream, container.modem, onResize)
+      attachStdin(process.stdin, dockerStream)
+    } 
+
+    // write stream output to buffer: independent of stdio inherit or pipe
+    dockerStream.pipe(bufferStream)
+
+    const startOptions = undefined
+    await container.start(startOptions)
+
+    await onResize()
+
+    const data = await container.wait()
+    // TODO handle exit code
+    console.log('data', data)
+
+    // allow nodejs to exit
+    if (stdio === 'inherit') {
+      detachStdout(process.stdout, onResize)
+      detachStdin(process.stdin, isRaw)
+      dockerStream.end();
+    }
+
+    // return stream output tokenized: remove ansi, split on newline
+    // https://github.com/chalk/ansi-regex/blob/master/index.js#L3
+    return bufferStream.buffer.toString().replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, "").split(/[\r\n]+/g)
+  }
+
+  async getFile(container: Container, filePath: string) {
+    if (!filePath) {
+      throw new Error(`No path provided getFile()`)
+    }
+    const data = await container.inspect()
+    // TODO maybe even relative to entry point?
+    const cwd = data.Config.WorkingDir
+
+    const stream = await container.getArchive({
+      'path': filePath.startsWith('/') ? filePath : path.join(cwd, filePath)
+    })
+    // @ts-ignore
+    const buf =  await streamToBuffer(stream)
+    const pkg = await ethpkg.getPackage(buf)
+    if (!pkg) {
+      return undefined
+    }
+    // if dir return all files
+    if (isDirPath(filePath)) {
+      return pkg
+    }
+    return pkg.getContent(filePath)
+  }
+
 }
+
