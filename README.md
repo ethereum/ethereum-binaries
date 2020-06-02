@@ -155,7 +155,7 @@ check out the other [examples](./examples)
 There are different types of binaries / programs that all require different implementation and interaction strategies.
 An attempt to classify them based on interactivity might look like this:
 
-## Services
+### Services
 
 Services or daemons are binaries that are started as background processes. They usually don't require *interaction*.
 
@@ -169,7 +169,7 @@ service.whenState(/*rpc ready*/)
 service.stop() // optional
 ```
 
-## Wizards / Assistants / REPL
+### Wizards / Assistants / REPL
 
 Wizards are programs that prompt the user interactively for input and perform operations in between those prompts or after they've received a full configuration processing all responses.
 read–eval–print loop (REPL) programs fall into this category because they constantly require user input and perform actions only after interaction.
@@ -178,7 +178,7 @@ read–eval–print loop (REPL) programs fall into this category because they co
 
 **The interaction pattern is:**
 
-### Full user-interaction
+#### Full user-interaction
 ```javascript
 const puppeth = await getClient('puppeth')
 await puppeth.start({
@@ -186,7 +186,7 @@ await puppeth.start({
 })
 ```
 
-### Automation
+#### Automation
 ```javascript
 const puppeth = await getClient('puppeth')
 await puppeth.start()
@@ -196,7 +196,7 @@ await puppeth.whenState(/*...*/) // wait again
 await puppeth.input(/*...*/) // respond again
 ```
 
-## Servers
+### Servers
 
 Programs that offer functionality via an API to users or other programs are called `servers` for simplicity.
 The calling program is called the `client` in the traditional client-server-model. ethbinary takes the `client` role when it is interacting with other programs and performing calls to their API.
