@@ -39,6 +39,17 @@ Documentation is available at [github.io/ethereum-binaries](https://philipplgh.g
         <br>
         <a href="https://prysmaticlabs.com/">Prysm</a>
       </td>
+        <td align="center" valign="top">
+        <img align="center" height="100" src="https://avatars0.githubusercontent.com/u/32980830?s=280&v=4" alt="puppeth logo">
+        <br>
+        <a href="https://github.com/puppeth">Puppeth</a>
+      </td>
+      </td>
+        <td align="center" valign="top">
+        <img align="center" height="100" src="https://camo.githubusercontent.com/0f1377ae214406b57e0743067901098502e01d3c/687474703a2f2f7777772e726564616b74696f6e2e74752d6265726c696e2e64652f66696c6561646d696e2f66673330382f69636f6e732f70726f6a656b74652f6c6f676f732f5a6f4b72617465735f6c6f676f2e737667" alt="zokrates logo">
+        <br>
+        <a href="https://github.com/Zokrates/ZoKrates">ZoKrates</a>
+      </td>
      </tr>
   </tbody>
 </table>
@@ -93,7 +104,7 @@ ethbinary start geth@1.9.10 --goerli
 ```javascript
 const { getClient } = require('ethbinary')
 const geth = await getClient('geth')
-await geth.start()
+await geth.start('--goerli')
 await geth.stop()
 ```
 
@@ -138,6 +149,82 @@ await cm.stopClient(clientId)
 ### More Examples
 
 check out the other [examples](./examples)
+
+# Binary Types
+
+There are different types of binaries / programs that all require different implementation and interaction strategies.
+An attempt to classify them based on interactivity might look like this:
+
+## Services
+
+Services or daemons are binaries that are started as background processes. They usually don't require `interaction`.
+`geth` for example can be started as a service. Interaction with the service is happening in this case only via the separate HTTP/IPC RPC API or not at all.
+
+**The interaction pattern is:**
+```javascript
+service.start()
+service.whenState(/*rpc ready*/)
+// do something with API
+service.stop() // optional
+```
+
+## Wizards / Assistants / REPL
+
+Wizards are programs that prompt the user interactively for input and perform operations in between those prompts or after they've received a full configuration processing all responses.
+read–eval–print loop (REPL) programs fall into this category because they constantly require user input and perform actions only after interaction.
+`puppeth` for example is an interactive wizard.
+
+**The interaction pattern is:**
+
+### Full user-interaction
+```javascript
+const puppeth = await getClient('puppeth')
+await puppeth.start({
+  stdio: 'inherit' // pass control to terminal: user interacts via stdin & stdout 
+})
+```
+
+### Automation
+```javascript
+const puppeth = await getClient('puppeth')
+await puppeth.start()
+await puppeth.whenState(log => log.includes('Please specify a network name ')) // parse logs to determine custom state
+await puppeth.input('my-network-name') // write to stdin the responses
+await puppeth.whenState(/*...*/) // wait again
+await puppeth.input(/*...*/) // respond again
+```
+
+## Servers
+
+Programs that offer functionality via an API to users or other programs are called `servers` for simplicity.
+The calling program is called the `client` in the traditional client-server-model. ethbinary takes the `client` role when it is interacting with other programs and performing calls to their API.
+
+The `ZoKrates` compiler is an example for a program that receives a single command, processes it and returns a result.
+
+**The interaction pattern is:**
+```javascript
+const zokrates = await getClient('zokrates')
+fs.writeFileSync(path.join(__dirname, 'test.zok'),   `
+def main(private field a, field b) -> (field):
+  field result = if a * a == b then 1 else 0 fi
+  return result
+`)
+await zokrates.execute(`compile -i ${SHARED_DATA}/test.zok`) 
+await zokrates.execute(`setup`) 
+await zokrates.execute('compute-witness -a 337 113569') 
+await zokrates.execute('generate-proof') 
+await zokrates.execute(`export-verifier`) 
+await zokrates.execute(`cp ./verifier.sol ${SHARED_DATA}`, { useBash: true, useEntrypoint: false })
+```
+Where a sequence of commands ins executed with `.execute`
+
+### Hybrid
+
+Of course, some binaries can implement multiple behaviors and act as a service, execute commands and provide server functionality.
+`geth` is such an example:
+`geth account new` - issues a command which can also be interactive e.g. ask for password
+`geth` will start the service
+
 
 # Extension
 
@@ -214,3 +301,27 @@ const result = await validator.execute(`accounts create -keystore-path "${__dirn
 // ...
 
 ```
+
+# Events
+
+ethbinary uses a an event listener mechanism to be notified about the different events during binary preparation.
+Most of the subroutines have 2-3 event(stage)s: `started`, `progress`, `finished`
+
+An event log for a binary download might look like this:
+```javascript
+resolve_package_started // api request is made + cache is checked
+fetching_release_list_started // api response is processed: json / xml parsing
+fetching_release_list_finished // remote releases are merged with cached releases
+filter_release_list_started // invalid releases are removed, version + platform info is extracted, custom filter functions are applied
+sort_releases_started // releases are sorted by semver version & release date
+sort_releases_finished
+filter_release_list_finished
+resolve_package_finished // the latest release info is available
+download_started // the asset for the latest release are downloaded
+download_progress
+download_finished
+extraction_started // the binary is detected inside the package and the binary or all contents are extracted 
+extraction_progreess
+extraction_finished
+```
+
