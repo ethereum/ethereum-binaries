@@ -45,7 +45,7 @@ export class ProcessManager {
           console.log('timeout reached')
           cleanup()
           this.kill(proc.pid)
-          reject(new Error('Command timeout reached'))
+          reject(new Error('Command timeout reached: '+timeout))
         }, timeout)
       }
     })
