@@ -1,9 +1,9 @@
-import fs from 'fs'
+import fs, { stat } from 'fs'
 import path from 'path'
 import ethpkg, { PackageManager, IRelease, IPackage, download } from 'ethpkg'
 import { clients as defaultClients } from './client_plugins'
 import { normalizePlatform, uuid, createFilterFunction, validateConfig, extractPlatformFromString, getFileExtension } from './utils'
-import { ClientInfo, ClientConfig, DownloadOptions, ClientStartOptions, instanceofPackageConfig, instanceofDockerConfig, instanceofClientInfo, CommandOptions, IClient, instanceofClientConfig, PackageConfig, ReleaseFilterOptions } from './types'
+import { ClientInfo, ClientConfig, DownloadOptions, ClientStartOptions, instanceofPackageConfig, instanceofDockerConfig, instanceofClientInfo, CommandOptions, IClient, instanceofClientConfig, PackageConfig, ReleaseFilterOptions, LogFilter } from './types'
 import DockerManager from './DockerManager'
 import { Logger } from './Logger'
 import { ProcessManager } from './ProcessManager'
@@ -77,7 +77,7 @@ export class MultiClientManager {
         const info = client.info()
         console.log(`Trying to stop ${info.type} client in state ${info.state} id:`, client.id)
         await client.stop()
-        console.log(`Client ${client.id} stopped.`)
+        console.log(`Client ${client.id} stopped.`, info)
       } catch (error) {
         console.error('Stop error', error.message)
       }
@@ -346,9 +346,12 @@ export class MultiClientManager {
     return result
   }
 
-  public async whenState(clientId: string | ClientInfo, state: string): Promise<ClientInfo> {
+  // NOTE: whenState with callback might be complicated in client-server environments
+  // the alternative approach is to poll on status.logs
+  public async whenState(clientId: string | ClientInfo, state: string | LogFilter): Promise<ClientInfo> {
     const client: IClient = this._findClient(clientId)
     let status = client.info()
+    
     // check if state was already reached
     if (state === CLIENT_STATE.HTTP_RPC_READY && status.rpcUrl) {
       return status
@@ -366,12 +369,32 @@ export class MultiClientManager {
     // if state not yet reached wait for it
     // TODO allow timeout
     return new Promise((resolve, reject) => {
-      client.on('state', (newState) => {
-        if (newState === state) {
-          resolve(client.info())
+      if (typeof state === 'function') {
+        const filter = state
+        const listener = (log: string) => {
+          if (filter(log)) {
+            resolve(client.info())
+            client.off('log', listener)
+          }
         }
-      })
+        client.on('log', listener)   
+      } else {
+        // TODO remove listener
+        client.on('state', (newState) => {
+          if (newState === state) {
+            resolve(client.info())
+          }
+        })
+      }
     })
+  }
+
+  public async input(clientId: string | ClientInfo, _input: string): Promise<ClientInfo> {
+    const client: IClient = this._findClient(clientId)
+    // TODO implement for docker
+    await (<BinaryClient>client).input(_input)
+    let status = client.info()
+    return status
   }
 
   public async rpc() {
@@ -425,7 +448,7 @@ export class SingleClientManager {
     if (typeof clientName === 'object') {
       options = clientName
     }
-    if (clientName !== 'string') {
+    if (typeof clientName !== 'string') {
       if (this._config) {
         clientName = this._config.name
       } else {
@@ -439,7 +462,12 @@ export class SingleClientManager {
     if (this._clientInstance) {
       throw new Error('A client is already set. If you want to use different clients use MultiClientManager instead')
     }
-    const client = await this._clientManager.getClient(clientSpec, options)
+    const client = await this._clientManager.getClient(clientSpec, {
+      listener: (newState, args) => {
+        console.log('new state', newState)
+      },
+      ...options
+    })
     this._clientInstance = client
     return this
   }
@@ -453,7 +481,7 @@ export class SingleClientManager {
     return this
   }
 
-  public async start(flags: string[] = [], options?: ClientStartOptions): Promise<ClientInfo> {
+  public async start(flags: string | string[] = [], options?: ClientStartOptions): Promise<ClientInfo> {
     return this._clientManager.startClient(this._getClientInstance(), flags, options)
   }
 
@@ -469,9 +497,14 @@ export class SingleClientManager {
     return this._clientManager.run(this._getClientInstance(), command, options)
   }
 
-  public async whenState(state: string): Promise<ClientInfo> {
+  public async whenState(state: string | LogFilter): Promise<ClientInfo> {
     return this._clientManager.whenState(this._getClientInstance(), state)
   }
+
+  public async input(_input: string): Promise<ClientInfo> {
+    return this._clientManager.input(this._getClientInstance(), _input)
+  }
+
 }
 
 export const getClient = async (clientSpec: string | ClientConfig, options?: DownloadOptions): Promise<SingleClientManager> => {
