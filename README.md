@@ -157,7 +157,8 @@ An attempt to classify them based on interactivity might look like this:
 
 ## Services
 
-Services or daemons are binaries that are started as background processes. They usually don't require `interaction`.
+Services or daemons are binaries that are started as background processes. They usually don't require *interaction*.
+
 `geth` for example can be started as a service. Interaction with the service is happening in this case only via the separate HTTP/IPC RPC API or not at all.
 
 **The interaction pattern is:**
@@ -172,6 +173,7 @@ service.stop() // optional
 
 Wizards are programs that prompt the user interactively for input and perform operations in between those prompts or after they've received a full configuration processing all responses.
 read–eval–print loop (REPL) programs fall into this category because they constantly require user input and perform actions only after interaction.
+
 `puppeth` for example is an interactive wizard.
 
 **The interaction pattern is:**
@@ -189,7 +191,7 @@ await puppeth.start({
 const puppeth = await getClient('puppeth')
 await puppeth.start()
 await puppeth.whenState(log => log.includes('Please specify a network name ')) // parse logs to determine custom state
-await puppeth.input('my-network-name') // write to stdin the responses
+await puppeth.input('my-network-name') // write response to stdin
 await puppeth.whenState(/*...*/) // wait again
 await puppeth.input(/*...*/) // respond again
 ```
