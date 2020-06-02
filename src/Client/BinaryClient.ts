@@ -6,31 +6,29 @@ import { PackageConfig, ClientInfo, ClientStartOptions, CommandOptions, GetClien
 import { ProcessManager } from "../ProcessManager"
 import { PROCESS_EVENTS } from "../events"
 import { PackageManager, IPackage, download } from "ethpkg"
-import { verifyBinary } from '../utils'
-import { Logger } from '../Logger'
+import { verifyBinary, resolveRuntimeDependency, getFileExtension } from '../utils'
+import logger from '../Logger'
 
-const logger = Logger.getInstance()
 
-const extractBinary = async (pkg: IPackage, binaryName?: string, destPath: string = process.cwd()) => {
+const extractBinary = async (pkg: IPackage, name: string, binaryName?: string, destPath: string = process.cwd()) => {
   const packagePath = pkg.filePath // only set if loaded from cache
   const entries = await pkg.getEntries()
   if (entries.length === 0) {
     throw new Error('Invalid or empty package')
   }
   let binaryEntry = undefined
-  if (binaryName) {
-    binaryEntry = entries.find((e: any) => e.relativePath.endsWith(binaryName))
-  } else {
-    // try to detect binary
+  if (!binaryName) {
     logger.warn('No "binaryName" specified: trying to auto-detect executable within package')
-    // const isExecutable = mode => Boolean((mode & 0o0001) || (mode & 0o0010) || (mode & 0o0100))
-    if (process.platform === 'win32') {
-      binaryEntry = entries.find((e: any) => e.relativePath.endsWith('.exe'))
-    } else {
-      // no heuristic available: pick first
-      binaryEntry = entries[0]
-    }
+    binaryName = name
   }
+
+  const ext = getFileExtension(binaryName)
+  if (process.platform === 'win32' && ext === undefined) {
+    binaryName += '.exe'
+  }
+
+  // const isExecutable = mode => Boolean((mode & 0o0001) || (mode & 0o0010) || (mode & 0o0100))
+  binaryEntry = entries.find((e: any) => e.relativePath.endsWith(binaryName))
 
   if (!binaryEntry) {
     throw new Error(
@@ -38,7 +36,7 @@ const extractBinary = async (pkg: IPackage, binaryName?: string, destPath: strin
     )
   } else {
     binaryName = binaryEntry.file.name
-    logger.log('auto-detected binary:', binaryName)
+    logger.warn('Auto-detected binary:', binaryName)
   }
 
   const destAbs = path.join(destPath, `${binaryName}_${pkg.metadata?.version}`)
@@ -87,8 +85,16 @@ export class BinaryClient extends BaseClient {
     version,
     platform,
     cachePath,
-    listener
-  } : GetClientOptions) {
+    isPackaged, // are the binaries packaged?
+    listener = () => { }
+  }: GetClientOptions) {
+
+    if (!isPackaged) {
+      throw new Error('Raw binaries should be handled by client manager')
+    }
+
+    listener(PROCESS_EVENTS.RESOLVE_BINARY_STARTED, {})
+
     const pkg = await packageManager.getPackage(config.repository, {
       prefix: config.prefix, // server-side filter based on string prefix
       version: version === 'latest' ? undefined : version, // specific version or version range that should be returned
@@ -98,29 +104,44 @@ export class BinaryClient extends BaseClient {
       cacheOnly: version === 'cache', // get latest cached if version = 'cache
       destPath: cachePath, // where to write package + metadata
       listener, // listen to progress events
-      extract: false, // extracts all package contents (good for java / python runtime clients without  single binary)
+      extract: true, //config.extract || false, // extracts all package contents (good for java / python runtime clients without  single binary)
       verify: false // ethpkg verification
     })
     if (!pkg) {
       throw new Error('Package not found')
     }
+    listener(PROCESS_EVENTS.RESOLVE_BINARY_FINISHED, { pkg })
 
     // verify package
     if (pkg.metadata && pkg.metadata.signature) {
       // TODO call listener
       try {
         const verificationResult = await verifyBinaryPackage(pkg, config.publicKey)
-        console.log('verification result', verificationResult)
+        console.log('Verification result', verificationResult)
       } catch (error) {
-        console.log('verification failed')        
+        console.log('Verification failed')
       }
     }
-    const binaryPath = await extractBinary(pkg, config.binaryName, cachePath)
+
+    if (config.dependencies) {
+      if (config.dependencies.runtime) {
+        const runtime = config.dependencies.runtime[0]
+        const runtimeBinaryPath = resolveRuntimeDependency(runtime)
+        if (!runtimeBinaryPath) {
+          throw new Error('Could not find path for runtime: ' + runtime.name)
+        }
+        logger.log('Runtime resolved: ', runtimeBinaryPath)
+        return new BinaryClient(runtimeBinaryPath, processManager, config)
+      }
+      else {
+        throw new Error('Invalid dependency config')
+      }
+    }
+
+    const binaryPath = await extractBinary(pkg, config.name, config.binaryName, cachePath)
     const client = new BinaryClient(binaryPath, processManager, config)
     return client
   }
-
-
 
   info(): ClientInfo {
     return {
@@ -132,7 +153,8 @@ export class BinaryClient extends BaseClient {
       ipc: this._ipc,
       rpcUrl: this._rpcUrl,
       processId: '' + (this._process ? this._process.pid : ''),
-      binaryPath: this._binaryPath
+      binaryPath: this._binaryPath,
+      logs: [...this._logs]
     }
   }
   private _parseLogs = (data: Buffer) => {
@@ -144,27 +166,40 @@ export class BinaryClient extends BaseClient {
     }
     if (!log) { return }
 
-    // search for IPC path in logs:
-    if (log.endsWith('.ipc') || log.includes('IPC endpoint opened')) {
-      // example geth: INFO [05-22|14:50:58.240] IPC endpoint opened  url=/Users/user/Library/Ethereum/goerli/geth.ipc
-      let ipcPath = log.split('=')[1].trim()
-      // fix double escaping
-      if (ipcPath.includes('\\\\')) {
-        ipcPath = ipcPath.replace(/\\\\/g, '\\')
-      }
-      this.ipc = ipcPath
-    }
+    // split logs into lines and process + emit them line by line
+    let lines = log.split(/\r|\n/)
 
-    if (log.includes('HTTP endpoint opened')) {
-      // example INFO [05-22|15:52:31.584] HTTP endpoint opened   url=http://127.0.0.1:8545/ cors= vhosts=localhost
-      const urlKeyVal = log.split(' ').find(l => l.startsWith('url'))
-      if (urlKeyVal) {
-        const [key, url] = urlKeyVal.split('=')
-        if (url) {
-          this.rpc = url.trim()
+    lines.forEach(line => {
+
+      // ignore empty lines
+      if(!line) { return }
+
+      // search for IPC path in logs:
+      if (line.endsWith('.ipc') || line.includes('IPC endpoint opened')) {
+        // example geth: INFO [05-22|14:50:58.240] IPC endpoint opened  url=/Users/user/Library/Ethereum/goerli/geth.ipc
+        let ipcPath = line.split('=')[1].trim()
+        // fix double escaping
+        if (ipcPath.includes('\\\\')) {
+          ipcPath = ipcPath.replace(/\\\\/g, '\\')
+        }
+        this.ipc = ipcPath
+      }
+
+      if (line.includes('HTTP endpoint opened')) {
+        // example INFO [05-22|15:52:31.584] HTTP endpoint opened   url=http://127.0.0.1:8545/ cors= vhosts=localhost
+        const urlKeyVal = line.split(' ').find(l => l.startsWith('url'))
+        if (urlKeyVal) {
+          const [key, url] = urlKeyVal.split('=')
+          if (url) {
+            this.rpc = url.trim()
+          }
         }
       }
-    }
+
+      // will emit the log
+      this.addLog(line)
+    })
+
   }
   async start(flags: string[] = [], options: ClientStartOptions = {}): Promise<void> {
     await super.start(flags, options)
@@ -184,6 +219,9 @@ export class BinaryClient extends BaseClient {
       stdout.on('data', this._parseLogs)
       stderr.on('data', this._parseLogs)
     }
+    this._process.on('error', (error) => {
+      // FIXME handle process errors
+    })
     listener(PROCESS_EVENTS.CLIENT_START_FINISHED, { name: this._config.name, flags })
   }
   async stop(): Promise<void> {
@@ -197,8 +235,12 @@ export class BinaryClient extends BaseClient {
       stderr.off('data', this._parseLogs)
     }
     this._processManager.kill('' + this._process.pid)
+    this._process = undefined
   }
-  async execute(command: string, options: CommandOptions = {}): Promise<string[]> {
+  async execute(command: string = '', options: CommandOptions = {}): Promise<string[]> {
+    if (this._process) {
+      throw new Error('Binary already running')
+    }
     const flags: string[] = command.split(' ')
     const stdio = options.stdio || 'pipe'
     const _process = await this._processManager.exec(this._uuid, this._binaryPath, [...flags], {
@@ -235,5 +277,11 @@ export class BinaryClient extends BaseClient {
       throw error
     }
     return commandLogs
+  }
+  async input(_input: string) {
+    if (!this._process) {
+      throw new Error('Binary not running')
+    }
+    this._process.stdin?.write(`${_input}\n`)
   }
 }
