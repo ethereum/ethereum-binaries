@@ -54,10 +54,24 @@ export class ProcessManager {
     stdio = 'pipe'
   } : SpawnOptions = {}) {
     const _process = spawn(command, args, {
-      stdio: [stdio, stdio, stdio],
+      // we "simulate" inherit to be able to intercept stdout
+      // https://github.com/sindresorhus/execa/issues/121
+      // https://github.com/nodejs/node/issues/8033
+      stdio: stdio === 'inherit' ? ['inherit', 'pipe', 'pipe'] : [stdio, stdio, stdio],
       detached: false,
       shell: false,
     })
+    if (stdio === 'inherit') {
+      const { stdout, stderr} = _process
+      // please node that this is not a full replacement for 'inherit'
+      // the child process can and will detect if stdout is a pty and change output based on it
+      // the terminal context is lost & ansi information (coloring) etc will be lost
+      // https://stackoverflow.com/questions/1401002/how-to-trick-an-application-into-thinking-its-stdout-is-a-terminal-not-a-pipe
+      if (stdout && stderr) {
+        stdout.pipe(process.stdout)
+        stderr.pipe(process.stderr)
+      }
+    }
     this.add(_process, clientId)
     return _process
   }
