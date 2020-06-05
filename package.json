@@ -22,7 +22,7 @@
     "cli-progress": "^3.8.2",
     "clime": "^0.5.10",
     "dockerode": "^3.2.0",
-    "ethpkg": "^0.9.0",
+    "ethpkg": "^0.10.0",
     "openpgp": "^4.10.4"
   },
   "devDependencies": {
