@@ -1,4 +1,5 @@
 import fs from 'fs'
+import path from 'path'
 import crypto from 'crypto'
 import stream from 'stream'
 import { FilterFunction, FilterConfig } from './types'
@@ -24,11 +25,23 @@ export const normalizePlatform = (platform: string) => {
 }
 
 export const createFilterFunction = (filterConfig?: FilterConfig): FilterFunction => {
+  if (!filterConfig) {
+    return () => true
+  }
+  if (typeof filterConfig === 'function') {
+    return filterConfig
+  }
   if (!filterConfig || !('name' in filterConfig)) {
     return (() => true)
   }
   const { name } = filterConfig
-  const includes: Array<string> = name.includes || []
+  if (typeof name.includes === 'string') {
+    name.includes = [ name.includes ] 
+  }
+  if (typeof name.excludes === 'string') {
+    name.excludes = [ name.excludes ] 
+  }
+  const includes : Array<string> = name.includes || []
   const excludes: Array<string> = name.excludes || []
   return ({ fileName, version }: any) => {
     if (!fileName) {
@@ -84,4 +97,63 @@ export const verifyPGP = async (filePath: string, publicKeyArmored: string, deta
 export const verifyBinary = async (binaryPath: string, armoredPublicKeys: string, detachedSig: string) => {
   const result = await verifyPGP(binaryPath, armoredPublicKeys, detachedSig)
   return result
+}
+
+const getJavaVersion = (javaBinPath: string) => {
+
+}
+
+export const resolveRuntimeDependency = (runtimeDependency : any = {}) => {
+  const { name, version, type } = runtimeDependency
+  if (name === 'Java') {
+    if ('JAVA_HOME' in process.env) {
+      const JAVA_HOME = process.env['JAVA_HOME']
+      if (!JAVA_HOME) {
+        return undefined
+      }
+      const JAVA_BIN = path.join(
+        JAVA_HOME,
+        'bin',
+        process.platform === 'win32' ? 'java.exe' : 'java'
+      )
+      return fs.existsSync(JAVA_BIN) ? JAVA_BIN : undefined
+    } else {
+      // MAC:
+      if (process.platform === 'darwin') {
+        if (fs.existsSync('/Library/Java/JavaVirtualMachines/')) {
+          const vms = fs.readdirSync('/Library/Java/JavaVirtualMachines/')
+          // /Contents/Home/bin/java
+          // console.log('found vms', vms)
+        }
+        // alternative tests
+        // /usr/bin/java
+        // /usr/libexec/java_home -V
+        // execute 'which java'
+        const javaPath = '/usr/bin/java'
+        return fs.existsSync(javaPath) ? javaPath : undefined
+      }
+      // console.log(process.env.PATH.includes('java'))
+    }
+    return undefined
+  }
+  return undefined
+}
+
+export const extractPlatformFromString = (str : string) : 'windows' | 'darwin' | 'linux' | undefined => {
+  str = str.toLowerCase() 
+  if (str.includes('win32') || str.includes('windows')) {
+    return 'windows'
+  }
+  if (str.includes('darwin') || str.includes('mac') || str.includes('macos')) {
+    return 'darwin'
+  }
+  if (str.includes('linux')) {
+    return 'linux'
+  }
+  return undefined
+}
+
+// should match .sha256 => match length 7
+export const getFileExtension = (str: string) : string | undefined => {
+  return str.match(/\.[0-9a-z]{1,7}$/i)?.shift()
 }
