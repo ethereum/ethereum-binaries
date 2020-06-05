@@ -5,12 +5,12 @@ const run = async () => {
   ClientManager.addClientConfig({
     name: 'nodejs',
     displayName: 'Node.js',
-    dockerfile: 'node:10',
+    dockerimage: 'node:10',
     entryPoint: 'auto',
     service: false
   })
 
-  const client = await ClientManager.getClient('nodejs', 'latest', {
+  const client = await ClientManager.getClient('nodejs', {
     listener: (newState, args) => console.log('new state', newState, args ? args.progress : 0)
   })
 
