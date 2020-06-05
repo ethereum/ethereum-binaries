@@ -7,16 +7,24 @@ export { IRelease }
 
 export interface FilterConfig {
   name: {
-    includes?: Array<string>;
-    excludes?: Array<string>;
+    includes?: string | Array<string>;
+    excludes?: string | Array<string>;
   }
 }
 
-export interface DownloadOptions {
+export declare type FilterFunction = (release: IRelease) => boolean;
+
+export interface ReleaseFilterOptions {
   version?: string;
   platform?: string;
+  packagesOnly?: boolean;
+}
+
+export interface DownloadOptions extends ReleaseFilterOptions {
   listener?: StateListener;
   cachePath?: string;
+  useDocker?: boolean;
+  isPackaged?: boolean
 }
 
 export type  GetClientOptions = DownloadOptions
@@ -37,6 +45,7 @@ export type ClientStartOptions = DownloadOptions & ProcessOptions & JobDetails
 export interface CommandOptions extends ProcessOptions {
   useBash?: boolean // is the command a bash command
   useEntrypoint?: boolean // is the command input for entrypoint
+  volume?: string // docker -v 
 }
 
 export interface IClient extends EventEmitter {
@@ -47,13 +56,19 @@ export interface IClient extends EventEmitter {
   execute(command: string, options?: CommandOptions): Promise<Array<string>> 
 }
 
-export declare type FilterFunction = (release: IRelease) => boolean;
+export declare type LogFilter = (log: string) => boolean;
+
+export interface ClientDependencies {
+  runtime?: any[]
+  client?: any[]
+}
 
 export interface ClientBaseConfig {
   name: string;
   displayName: string;
   flags?: string[]; // default flags to start the client with
-  ports? : { [index: string] : string }; // ports a client uses
+  ports? : string[] | { [index: string] : string }; // ports a client uses
+  dependencies?: ClientDependencies 
 }
 
 export interface DockerConfig extends ClientBaseConfig {
@@ -64,10 +79,12 @@ export interface DockerConfig extends ClientBaseConfig {
 
 export interface PackageConfig extends ClientBaseConfig {
   repository: string;
-  prefix?: undefined;
-  filter?: FilterFunction;
+  prefix?: string;
+  filter?: FilterFunction | FilterConfig;
   binaryName?: string; // the name of binary in package - e.g. 'geth'; auto-expanded to geth.exe if necessary
   publicKey?: string;
+  isPackaged?: boolean;
+  extract?: boolean; // if true all package contents are extracted
 }
 
 export function instanceofDockerConfig(object: any): object is DockerConfig {
@@ -97,6 +114,7 @@ export interface ClientInfo {
   rpcUrl?: string // url to rpc server
   binaryPath?: string // can be undefined for docker clients
   processId: string // container id for docker clients
+  logs: string[]
 }
 
 export function instanceofClientInfo(object: any): object is ClientInfo {
