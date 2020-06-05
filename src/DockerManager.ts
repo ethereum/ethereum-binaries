@@ -25,6 +25,7 @@ export interface ContainerConfig {
   overwrite?: boolean; // if container with name exists -> remove
   overwriteEntrypoint?: boolean; // use /bin/sh instead of entrypoint
   autoPort?: boolean; // map ports to any available ports
+  volume?: string; // shared volume
   cmd?: string[]
 }
 
@@ -200,13 +201,13 @@ export default class DockerManager {
     autoPort = false,
     overwriteEntrypoint = false,
     ports = [],
+    volume = undefined,
     cmd = undefined
   } : ContainerConfig = {}) {
     // TODO  handle 'OCI runtime create failed: container_linux.go:346: starting container process caused "exec: \\"/bin/bash\\": stat /bin/bash: no such file or directory": unknown'
     // TODO  handle no such container - No such image: golang:1.13-alpine 
     const stopIfRunning = true
 
-    // TODO save original entrypoint
     let container = await this.getContainer(containerName, stopIfRunning)
     if (!container || overwrite) {
       if (container) {
@@ -228,7 +229,8 @@ export default class DockerManager {
         HostConfig: {
           // Automatically remove the container when the container's process exits (e.g. when stopped).
           AutoRemove: dispose,
-          PortBindings: {}
+          PortBindings: {},
+          Binds: volume ? [ volume ] : undefined
         },
         Cmd: cmd
       }
