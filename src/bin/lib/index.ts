@@ -2,6 +2,7 @@ import { SingleClientManager } from "../../ClientManager";
 import cliProgress from 'cli-progress'
 import boxen from 'boxen'
 import chalk from 'chalk'
+import { PROCESS_EVENTS } from "../../events";
 const { Select } = require('enquirer')
 
 const printFormattedRelease = (release?: any) => {
@@ -25,27 +26,52 @@ export const clientSpecifierToCommand = (clientSpecifier?: string) => {
 }
 
 const createProgressListener = () => {
-  let progressBar : any
+  let downloadProgressBar : any
+  let extractProgressBar : any
   return (newState: string, args: any) => {
-    if (newState === 'resolve_package_finished') {
+    // console.log('new state', newState)
+    if (newState === PROCESS_EVENTS.RESOLVE_PACKAGE_STARTED) {
+      console.log(chalk.green('Looking up latest release'))
+    }
+    if (newState === PROCESS_EVENTS.RESOLVE_PACKAGE_FINISHED) {
       console.log(chalk.green('Release resolved:'))
       printFormattedRelease(args.release)
     }
-    if (newState === 'download_started') {
+    if (newState === PROCESS_EVENTS.DOWNLOAD_STARTED) {
       console.log(chalk.green.bold('Download client'))
-      progressBar = new cliProgress.SingleBar({}, cliProgress.Presets.shades_classic)
-      progressBar.start(100, 0);
+      downloadProgressBar = new cliProgress.SingleBar({}, cliProgress.Presets.shades_classic)
+      downloadProgressBar.start(100, 0);
     }
-    else if (newState === 'download_progress') {
-      if (!progressBar) return
+    else if (newState === PROCESS_EVENTS.DOWNLOAD_PROGRESS) {
+      if (!downloadProgressBar) return
       const { progress } = args
-      progressBar.update(progress)
+      downloadProgressBar.update(progress)
     }
-    else if(newState === 'download_finished') {
-      progressBar.stop()
+    else if(newState === PROCESS_EVENTS.DOWNLOAD_FINISHED) {
+      downloadProgressBar.stop()
       console.log('\n')
     } 
-    else  if(newState === 'starting_client') {
+    else if (newState === PROCESS_EVENTS.EXTRACT_PACKAGE_STARTED) {
+      console.log(chalk.green.bold('Extract package contents'))
+      extractProgressBar = new cliProgress.SingleBar({}, cliProgress.Presets.shades_classic)
+      extractProgressBar.start(100, 0);
+    }
+    else if (newState === PROCESS_EVENTS.EXTRACT_PACKAGE_PROGRESS) {
+      const { progress, file, destPath } = args
+      extractProgressBar.update(progress)
+    }
+    else if (newState === PROCESS_EVENTS.EXTRACT_PACKAGE_FINISHED) {
+      extractProgressBar.stop()
+      console.log('\n')
+    }
+    else if (newState === PROCESS_EVENTS.RESOLVE_BINARY_FINISHED) {
+      const { pkg } = args
+      const { metadata } = pkg
+      if (metadata.remote === false) {
+        console.log(chalk.bold('Using cached binary from package at', pkg.filePath))
+      }
+    }
+    else  if(newState === PROCESS_EVENTS.CLIENT_START_STARTED) {
       console.log(chalk.bold('Starting client now...\n'))
     }
     else {
@@ -55,12 +81,14 @@ const createProgressListener = () => {
 }
 
 export const downloadClient = async (clientName = 'geth', clientVersion?: string) => {
-
     const cm = new SingleClientManager()
-    if (!clientVersion){
+    if (!clientVersion) {
       let versions = await cm.getClientVersions(clientName)
+      if (!versions || versions.length === 0) {
+        throw new Error(`No releases found for client "${clientName}"`)
+      }
       const prompt = new Select({
-        name: 'selectedAccount',
+        name: 'selectedVersion',
         message: 'Which version?',
         choices: versions.map((r, idx) => ({
           name: r.version, 
@@ -79,9 +107,15 @@ export const downloadClient = async (clientName = 'geth', clientVersion?: string
     // console.log('client binary path', client)
 }
 
-export const startClient = async (clientName = 'geth', version='latest', flags: string[] = [], options = {}) => {
+const combineListeners = (...listeners: Function[]) => {
+  return (newState: string, args: any) => {
+    listeners.forEach(listener => listener && listener(newState, args))
+  }
+}
+
+export const startClient = async (clientName = 'geth', version='latest', flags: string[] = [], options: any = {}) => {
   const cm = new SingleClientManager()
-  const listener = createProgressListener()
+  const listener = combineListeners(createProgressListener(), options.listener)
   const client = await cm.getClient(clientName, {
     version,
     listener
