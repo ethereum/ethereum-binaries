@@ -18,6 +18,7 @@ export abstract class BaseClient extends EventEmitter implements IClient {
   protected _state: CLIENT_STATE = CLIENT_STATE.INIT
   protected _ipc?: string // store ipc path if it can be detected
   protected _rpcUrl?: string // store rpc server url if it can be detected
+  protected _logs: string[] = []
 
   get id() {
     return this._uuid
@@ -45,6 +46,10 @@ export abstract class BaseClient extends EventEmitter implements IClient {
     this._state = CLIENT_STATE.STOPPED
     this._stopped = Date.now()
     this.emit('state', CLIENT_STATE.STOPPED)
+  }
+  addLog(log: string) {
+    this._logs.push(log)
+    this.emit('log', log)
   }
   abstract execute(command: string, options?: CommandOptions): Promise<Array<string>> 
 }
