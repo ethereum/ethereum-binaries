@@ -247,11 +247,11 @@ const cm = new SingleClientManager()
 const clientConfig = { 
   name: 'prysm.validator', 
   repository: 'https://github.com/prysmaticlabs/prysm', 
-  filter: ({ fileName }) => fileName.includes('validator') 
+  isPackaged: false,
+  filter: ({ fileName }) => fileName.includes('validator')
 }
 const validator = await cm.getClient(clientConfig, {
   version: '1.0.0-alpha.6',
-  isPackaged: false,
 })
 ```
 
