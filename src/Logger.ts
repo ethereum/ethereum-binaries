@@ -6,7 +6,19 @@ export const LOGLEVEL = {
 }
 
 export class Logger {
-  private _loglevel = LOGLEVEL.INFO
+  private _loglevel = LOGLEVEL.WARN
+
+  private static _instance : Logger
+
+  private constructor() {}
+
+  public static getInstance() {
+    if (!Logger._instance) {
+      Logger._instance = new Logger()
+    }
+    return Logger._instance
+  }
+
   _log(loglevel = LOGLEVEL.INFO, message: string, ...optionalParams: any[]) {
     if (this._loglevel >= loglevel) {
       console.log(message, ...optionalParams)
@@ -22,3 +34,7 @@ export class Logger {
     this._log(LOGLEVEL.WARN, message, ...optionalParams)
   }
 }
+
+const logger = Logger.getInstance()
+
+export default logger

@@ -11,7 +11,6 @@ export class ClientOptions extends Options {
   @option({
     name: 'clientVersion',
     description: 'sets the client version',
-    default: 'latest',
   })
   version?: string;
 }
@@ -30,7 +29,7 @@ export default class extends Command {
     clientName: string,
     options: ClientOptions
   ) {
-    console.log('download client', clientName, options.version)
+    console.log('download client', clientName, 'version', options.version)
     await downloadClient(clientName, options.version)
   }
 }

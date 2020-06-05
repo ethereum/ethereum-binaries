@@ -2,7 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import { ChildProcess, spawn } from "child_process"
 import { BaseClient, CLIENT_STATE } from "./BaseClient"
-import { PackageConfig, ClientInfo, ClientStartOptions, CommandOptions, GetClientOptions } from "../types"
+import { PackageConfig, ClientInfo, ClientStartOptions, CommandOptions, GetClientOptions, FilterFunction } from "../types"
 import { ProcessManager } from "../ProcessManager"
 import { PROCESS_EVENTS } from "../events"
 import { PackageManager, IPackage, download } from "ethpkg"
@@ -99,12 +99,12 @@ export class BinaryClient extends BaseClient {
       prefix: config.prefix, // server-side filter based on string prefix
       version: version === 'latest' ? undefined : version, // specific version or version range that should be returned
       platform,
-      filter: config.filter, // string filter e.g. filter 'unstable' excludes geth-darwin-amd64-1.9.14-unstable-6f54ae24 
+      filter: <FilterFunction>config.filter, // string filter e.g. filter 'unstable' excludes geth-darwin-amd64-1.9.14-unstable-6f54ae24 
       cache: cachePath, // avoids download if package is found in cache
       cacheOnly: version === 'cache', // get latest cached if version = 'cache
       destPath: cachePath, // where to write package + metadata
       listener, // listen to progress events
-      extract: true, //config.extract || false, // extracts all package contents (good for java / python runtime clients without  single binary)
+      extract: config.extract || false, // extracts all package contents (good for java / python runtime clients without  single binary)
       verify: false // ethpkg verification
     })
     if (!pkg) {
@@ -172,7 +172,7 @@ export class BinaryClient extends BaseClient {
     lines.forEach(line => {
 
       // ignore empty lines
-      if(!line) { return }
+      if (!line) { return }
 
       // search for IPC path in logs:
       if (line.endsWith('.ipc') || line.includes('IPC endpoint opened')) {
@@ -243,6 +243,11 @@ export class BinaryClient extends BaseClient {
     }
     const flags: string[] = command.split(' ')
     const stdio = options.stdio || 'pipe'
+
+
+    // when stdio = 'inherit': this does not exist: process.stdout.on('data', onData)
+    // and cp.stdout won't be available. therefore processManager simulates inherit
+    // so that we can intercept / log the output
     const _process = await this._processManager.exec(this._uuid, this._binaryPath, [...flags], {
       stdio,
     })
@@ -254,15 +259,20 @@ export class BinaryClient extends BaseClient {
     const timeout = options.timeout
     const commandLogs: Array<string> = []
     const { stdout, stderr, stdin } = _process
-    if (stdout && stderr) {
-      const onData = (data: any) => {
-        const log = data.toString()
-        if (log) {
-          let parts = log.split(/\r|\n/)
-          parts = parts.filter((p: string) => p !== '')
-          commandLogs.push(...parts)
-        }
+
+    // note: this is very similar to parseLogs but does not 
+    // emit or analyze the command output
+    // we should maybe merge the two in the future
+    const onData = (data: any) => {
+      const log = data.toString()
+      if (log) {
+        let parts = log.split(/\r|\n/)
+        parts = parts.filter((p: string) => p !== '')
+        commandLogs.push(...parts)
       }
+    }
+
+    if (stdout && stderr) {
       stdout.on('data', onData)
       stderr.on('data', onData)
     }

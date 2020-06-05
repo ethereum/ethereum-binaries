@@ -1,6 +1,7 @@
 import {Command, command, metadata, param, Options, option} from 'clime'
 import { startClient } from '../lib';
 import chalk from 'chalk'
+import { PROCESS_EVENTS } from '../../events';
 
 export class ClientOptions extends Options {
   @option({
@@ -36,10 +37,10 @@ export default class extends Command {
     console.log(chalk.bold(`Starting client: "${clientName}" version: "${clientVersion}" with flags:`, JSON.stringify(flags)))
     try {
       await startClient(clientName, clientVersion, flags, {
-        stdio: 'inherit'
+        stdio: 'inherit',
       })
     } catch (error) {
-      console.log(chalk.red.bold('Client error - '+error.message))
+      console.log(chalk.red.bold('Client error - '+error.message), error)
     }
   }
 }
