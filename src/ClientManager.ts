@@ -104,7 +104,7 @@ export class MultiClientManager {
     }
   }
 
-  private async _getClientConfig(clientName: string, useDocker = undefined): Promise<ClientConfig> {
+  private async _getClientConfig(clientName: string, useDocker : boolean | undefined = undefined): Promise<ClientConfig> {
     let config = this._clientConfigs.find(c => c.name === clientName && (useDocker === true ? instanceofDockerConfig(c) : true))
     if (!config) {
       console.warn('Supported clients are', await this.getAvailableClients())
