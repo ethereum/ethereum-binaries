@@ -1,46 +1,68 @@
-const findIpcPathInLogs = (logs: any) => {
-  let ipcPath
-  for (const logPart of logs) {
-    const found = logPart.includes('IPC endpoint opened')
-    if (found) {
-      ipcPath = logPart.split('=')[1].trim()
-      // fix double escaping
-      if (ipcPath.includes('\\\\')) {
-        ipcPath = ipcPath.replace(/\\\\/g, '\\')
-      }
-      // console.log('Found IPC path: ', ipcPath)
-      return ipcPath
-    }
-  }
-  // console.log('IPC path not found in logs', logs)
-  return null
-}
+const pubKeyBuildServer = `-----BEGIN PGP PUBLIC KEY BLOCK-----
+
+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
+Kw==
+=noc8
+-----END PGP PUBLIC KEY BLOCK-----`
+
+
 let platform = process.platform === 'win32' ? 'windows' : process.platform
 
 const geth_config = {
-  type: 'client',
-  order: 1,
-  displayName: 'Geth',
   name: 'geth',
+  displayName: 'Geth',
   repository: 'azure:gethstore',
-  // @ts-ignore
-  type: 'type:client',
-  modifiers: {
-    version: ({ version }: any) =>
-      version
-        .split('-')
-        .slice(0, -1)
-        .join('-')
-  },
   filter: {
     name: {
-      includes: [platform],
       excludes: ['unstable', 'alltools', 'swarm', 'mips', 'arm']
     }
   },
+  binaryName: 'geth',
   prefix: `geth-${platform}`,
-  binaryName: process.platform === 'win32' ? 'geth.exe' : 'geth',
-  resolveIpc: (logs: any) => findIpcPathInLogs(logs),
+  publicKey: pubKeyBuildServer
 }
 
 export default geth_config
