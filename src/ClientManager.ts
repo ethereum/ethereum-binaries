@@ -468,7 +468,7 @@ export class SingleClientManager {
     }
     const client = await this._clientManager.getClient(clientSpec, {
       listener: (newState, args) => {
-        console.log('new state', newState)
+        // console.log('new state', newState)
       },
       ...options
     })
