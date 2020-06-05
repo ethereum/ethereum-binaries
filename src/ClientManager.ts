@@ -3,7 +3,7 @@ import path from 'path'
 import ethpkg, { PackageManager, IRelease, IPackage, download } from 'ethpkg'
 import { clients as defaultClients } from './client_plugins'
 import { normalizePlatform, uuid, createFilterFunction, validateConfig, extractPlatformFromString, getFileExtension } from './utils'
-import { ClientInfo, ClientConfig, DownloadOptions, ClientStartOptions, instanceofPackageConfig, instanceofDockerConfig, instanceofClientInfo, CommandOptions, IClient, instanceofClientConfig, PackageConfig, ReleaseFilterOptions, LogFilter } from './types'
+import { ClientInfo, ClientConfig, DownloadOptions, ClientStartOptions, instanceofPackageConfig, instanceofDockerConfig, instanceofClientInfo, CommandOptions, IClient, instanceofClientConfig, PackageConfig, ReleaseFilterOptions, LogFilter, FilterFunction, GetClientOptions } from './types'
 import DockerManager from './DockerManager'
 import { Logger } from './Logger'
 import { ProcessManager } from './ProcessManager'
@@ -14,6 +14,8 @@ import { PROCESS_EVENTS } from './events'
 
 const DOCKER_PREFIX = 'ethbinary'
 
+export const SHARED_DATA = '/shared_data'
+
 export class MultiClientManager {
 
   private _packageManager: PackageManager
@@ -21,7 +23,7 @@ export class MultiClientManager {
   private _dockerManager: DockerManager
   private _processManager: ProcessManager
   private _logger: Logger
-  private _clientConfigs: { [index: string]: ClientConfig }
+  private _clientConfigs: ClientConfig[]
 
   /**
    * Because a ClientManager instance handle process events like uncaughtException, exit, ..
@@ -35,7 +37,7 @@ export class MultiClientManager {
     this._dockerManager = new DockerManager(DOCKER_PREFIX)
     this._processManager = new ProcessManager()
     this._clients = []
-    this._clientConfigs = {}
+    this._clientConfigs = []
 
     this.addClientConfig(defaultClients)
 
@@ -102,17 +104,12 @@ export class MultiClientManager {
     }
   }
 
-  private async _getClientConfig(clientName: string): Promise<ClientConfig> {
-    let config = this._clientConfigs[clientName]
+  private async _getClientConfig(clientName: string, useDocker = undefined): Promise<ClientConfig> {
+    let config = this._clientConfigs.find(c => c.name === clientName && (useDocker === true ? instanceofDockerConfig(c) : true))
     if (!config) {
       console.warn('Supported clients are', await this.getAvailableClients())
-      throw new Error('Unsupported client: ' + clientName)
+      throw new Error('Unsupported client: ' + clientName+' - docker: '+useDocker)
     }
-    config = { ...config } // clone before modification
-    // convert filter object to function
-    // TODO move to add config
-    // @ts-ignore
-    config.filter = createFilterFunction(config.filter)
     return config
   }
 
@@ -128,20 +125,22 @@ export class MultiClientManager {
       if (!isValid) {
         throw new Error('Invalid client config')
       }
-      config = {
+      const _config = {
+        // set defaults
         // @ts-ignore
         displayName: config.name,
         entryPoint: 'auto',
         service: false,
-        ...config
+        ...config,
+        // @ts-ignore
+        filter: createFilterFunction(config.filter)
       }
-      // @ts-ignore
-      this._clientConfigs[config.name] = config
+      this._clientConfigs.push(_config)
     }
   }
 
   public async getAvailableClients() {
-    return Object.keys(this._clientConfigs)
+    return this._clientConfigs.map(c => `${c.name} - docker: ${instanceofDockerConfig(c)}`)
   }
 
   public async getClientVersions(clientName: string, {
@@ -156,7 +155,7 @@ export class MultiClientManager {
     }
     let releases = await this._packageManager.listPackages(config.repository, {
       prefix: config.prefix,
-      filter: config.filter,
+      filter: <FilterFunction | undefined>config.filter,
       version, // apply version or version range filter
       packagesOnly, // dangerous mode: return not packaged assets as well
     })
@@ -186,23 +185,21 @@ export class MultiClientManager {
     version = 'latest',
     platform = process.platform,
     listener = () => {},
-    cachePath = path.join(process.cwd(), 'cache'),
-    isPackaged = true
-  }: DownloadOptions = {}): Promise<ClientInfo> {
+    cachePath,
+    useDocker = undefined // only use docker configs
+  }: GetClientOptions = {}): Promise<ClientInfo> {
 
     let clientName = typeof clientSpec === 'string' ? clientSpec : clientSpec.name
+
+    cachePath = cachePath || path.join(process.cwd(), 'cache', clientName)
 
     if (instanceofClientConfig(clientSpec)) {
       // this does additional validation and sets default: do NOT use config directly without checks
       this.addClientConfig(clientSpec)
     }
 
-    let config = await this._getClientConfig(clientName)
+    const config = await this._getClientConfig(clientName, useDocker)
 
-    // make sure cache path exists
-    if (!fs.existsSync(cachePath)) {
-      fs.mkdirSync(cachePath, { recursive: true })
-    }
     platform = normalizePlatform(platform)
 
     let client
@@ -215,8 +212,15 @@ export class MultiClientManager {
     }
     else if (instanceofPackageConfig(config)) {
 
-      if (isPackaged === false) {
-        // this handles already version, binary and platform filtering
+      const { isPackaged = true } = config
+
+      // make sure cache path exists (docker has no cache)
+      if (!fs.existsSync(cachePath)) {
+        fs.mkdirSync(cachePath, { recursive: true })
+      }
+
+      if (!isPackaged) {
+        // this handles version, binary and platform filtering already
         let releases = await this.getClientVersions(clientName, {
           version,
           packagesOnly: false
