@@ -98,6 +98,9 @@ export default class DockerManager {
   }
 
   public async createImage(imageName: string, dockerFile: IPackage, listener: StateListener = (newState: string, arg: any) => undefined) {
+    if (!this.isConnected()) {
+      throw new Error('Not connected to docker daemon - forgot .connect() ?')
+    }
     const buf = await dockerFile.toBuffer()
     // always prefix images for detection
     imageName = imageName.startsWith(`${this.prefix}_`) ? imageName : `${this.prefix}_${imageName}`
@@ -106,21 +109,29 @@ export default class DockerManager {
     })
     // parse stream and pass events to listener
     _stream.on('data', (chunk: any) => {
+      let eventObjects = []
       try {
         let st = chunk.toString('utf8')
         // st = st.replace(/\r*\n*\s*\S*/g, '')
         st = st.replace(/\r?\n|\r/g, '')
-        st = st.replace(/}/gi, '},')
+        st = st.replace(/}(?!,)/gi, '},')
         st = st.replace(',}', '}')
         let jsonString = `[${st}]`
         jsonString = jsonString.replace(',]', ']')
-        const eventObjects = JSON.parse(jsonString)
-        const logs = eventObjects.map((e: any) => e.stream ? e.stream.trim() : '').filter((log: string) => log)
-        for (const log of logs) {
-          listener(PROCESS_EVENTS.DOCKER_EVENT, { log: log })
-        }
+        eventObjects = JSON.parse(jsonString)
       } catch (error) {
-        console.log('parse docker log error', error.message)
+        console.log('parse docker log error: ', error.message)
+      }
+
+      for (const dockerEvent of eventObjects) {
+        if (dockerEvent.error) {
+          // TODO handle error code
+          throw new Error(dockerEvent.error)
+        }
+        const log = dockerEvent.stream ? dockerEvent.stream.trim() : ''
+        if (log) {
+          listener(PROCESS_EVENTS.DOCKER_EVENT, { log })
+        }
       }
     })
     const res = await new Promise((resolve, reject) => {
@@ -134,7 +145,6 @@ export default class DockerManager {
 
   public async createImageFromDockerfile(imageNameUnprefixed: string, dockerFilePath: string, listener?: StateListener) {
     const dirPath = path.dirname(dockerFilePath)
-    console.log('dir', dirPath)
     const pkg = await ethpkg.createPackage(dirPath, {
       type: 'tar',
       compressed: true,
@@ -143,6 +153,16 @@ export default class DockerManager {
       }
     })
     // TODO check pkg contains dockerfile
+    const imageName = await this.createImage(imageNameUnprefixed, pkg, listener)
+    return imageName
+  }
+
+  public async createImageFromDockerfileContent(imageNameUnprefixed: string, dockerFileContents: string, listener?: StateListener) {
+    const pkg = await ethpkg.createPackage('temp', {
+      type: 'tar',
+      compressed: true
+    })
+    await pkg.addEntry('Dockerfile', Buffer.from(dockerFileContents))
     const imageName = await this.createImage(imageNameUnprefixed, pkg, listener)
     return imageName
   }
@@ -236,7 +256,7 @@ export default class DockerManager {
       }
 
       if (overwriteEntrypoint) {
-        containerConfig['Entrypoint'] = ['/bin/sh']
+        // containerConfig['Entrypoint'] = ['/bin/sh']
       }
 
       // we auto-bind all ports that are exposed from the container to the host
@@ -259,6 +279,7 @@ export default class DockerManager {
       }
       // console.log('config', JSON.stringify(containerConfig, null, 2))
       try {
+        // console.log('create container with config', containerConfig)
         container = await this._docker.createContainer(containerConfig)
       } catch (error) {
         console.log('create container error', error)
