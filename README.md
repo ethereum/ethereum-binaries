@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="https://circleci.com/gh/PhilippLgh/ethereum-binaries"><img src="https://img.shields.io/circleci/project/github/PhilippLgh/ethereum-binaries/master.svg" alt="Build Status"></a>
+  <a href="https://circleci.com/gh/ethereum/ethereum-binaries"><img src="https://img.shields.io/circleci/project/github/ethereum/ethereum-binaries/master.svg" alt="Build Status"></a>
   <a href="https://npmcharts.com/compare/ethbinary?minimal=true"><img src="https://img.shields.io/npm/dm/ethbinary.svg" alt="Downloads"></a>
   <a href="https://www.npmjs.com/package/ethbinary"><img src="https://img.shields.io/npm/v/ethbinary.svg" alt="Version"></a>
   <a href="https://www.npmjs.com/package/ethbinary"><img src="https://img.shields.io/npm/l/ethbinary.svg" alt="License"></a>
@@ -22,7 +22,7 @@ Fast, easy and secure Ethereum binary management.
 
 # Docs
 
-Documentation is available at [github.io/ethereum-binaries](https://philipplgh.github.io/ethereum-binaries/#/)
+Documentation is available at [github.io/ethereum-binaries](https://ethereum.github.io/ethereum-binaries/#/)
 
 # Supported Clients & Binaries
 
