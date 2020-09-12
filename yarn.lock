@@ -1110,10 +1110,10 @@ ethjs-util@0.1.6:
     is-hex-prefixed "1.0.0"
     strip-hex-prefix "1.0.0"
 
-ethpkg@^0.9.0:
-  version "0.9.0"
-  resolved "https://registry.yarnpkg.com/ethpkg/-/ethpkg-0.9.0.tgz#0420f529f01b74372c2cab083aa21ea231c95289"
-  integrity sha512-4n3z4epdBQK1iHFH5nXZ3v4vx65wyeOYidSj4K+2nwn3wpJZWRABv9e5S/hRku1gECitHMtIvn60Tm0lPak3qA==
+ethpkg@^0.10.0:
+  version "0.10.0"
+  resolved "https://registry.yarnpkg.com/ethpkg/-/ethpkg-0.10.0.tgz#d1cdebc75dd3dd2987a00f19f9b4f365895d9468"
+  integrity sha512-3gi0tuAIfeNlRpCV6kV1djEMrc8FBiveDZAlwtQha28dqz2iX7OaN/A81q/ry92g2v2jaf3YXT4gT3x3c4uj4w==
   dependencies:
     "@ianu/sdk" "^1.0.1"
     "@octokit/rest" "^17.5.1"
@@ -1916,9 +1916,9 @@ node-environment-flags@1.0.6:
     semver "^5.7.0"
 
 node-fetch@^2.1.2, node-fetch@^2.3.0:
-  version "2.6.0"
-  resolved "https://registry.yarnpkg.com/node-fetch/-/node-fetch-2.6.0.tgz#e633456386d4aa55863f676a7ab0daa8fdecb0fd"
-  integrity sha512-8dG4H5ujfvFiqDmVu9fQ5bOHUC15JMjMY/Zumv26oOvvVJjM67KF8koCWIabKQ1GJIa9r2mMZscBq/TbdOcmNA==
+  version "2.6.1"
+  resolved "https://registry.yarnpkg.com/node-fetch/-/node-fetch-2.6.1.tgz#045bd323631f76ed2e2b55573394416b639a0052"
+  integrity sha512-V4aYg89jEoVRxRb2fJdAg8FHvI7cEyYdVAh94HH0UIK8oJxUfkjlDQN9RbMx+bEjP7+ggMiFRprSti032Oipxw==
 
 node-localstorage@~1.3.0:
   version "1.3.1"
