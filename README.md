@@ -307,6 +307,11 @@ const result = await validator.execute(`accounts create -keystore-path "${__dirn
 
 ```
 
+<p align="center">
+  <img src="go-ethereum-lang.jpeg" alt="demo" />
+</p> 
+
+
 # Events
 
 ethbinary uses a an event listener mechanism to be notified about the different events during binary preparation.
