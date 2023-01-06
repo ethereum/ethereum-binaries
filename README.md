@@ -8,6 +8,10 @@
 
 # Ethereum Binaries
 
+## 🔥 This project has been deprecated and will no longer be maintained. 🔥
+
+<br/>
+
 Fast, easy and secure Ethereum binary management.
 
 - [X] 🎁 **Package Extraction**
