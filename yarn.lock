@@ -1110,10 +1110,10 @@ ethjs-util@0.1.6:
     is-hex-prefixed "1.0.0"
     strip-hex-prefix "1.0.0"
 
-ethpkg@^0.9.0:
-  version "0.9.0"
-  resolved "https://registry.yarnpkg.com/ethpkg/-/ethpkg-0.9.0.tgz#0420f529f01b74372c2cab083aa21ea231c95289"
-  integrity sha512-4n3z4epdBQK1iHFH5nXZ3v4vx65wyeOYidSj4K+2nwn3wpJZWRABv9e5S/hRku1gECitHMtIvn60Tm0lPak3qA==
+ethpkg@^0.10.0:
+  version "0.10.0"
+  resolved "https://registry.yarnpkg.com/ethpkg/-/ethpkg-0.10.0.tgz#d1cdebc75dd3dd2987a00f19f9b4f365895d9468"
+  integrity sha512-3gi0tuAIfeNlRpCV6kV1djEMrc8FBiveDZAlwtQha28dqz2iX7OaN/A81q/ry92g2v2jaf3YXT4gT3x3c4uj4w==
   dependencies:
     "@ianu/sdk" "^1.0.1"
     "@octokit/rest" "^17.5.1"
@@ -2133,9 +2133,9 @@ path-key@^3.1.0:
   integrity sha512-ojmeN0qd+y0jszEtoY48r0Peq5dwMEkIlCOu6Q5f41lfkswXuKtYrhgoTpLnyIcHm24Uhqx+5Tqm2InSwLhE6Q==
 
 path-parse@^1.0.6:
-  version "1.0.6"
-  resolved "https://registry.yarnpkg.com/path-parse/-/path-parse-1.0.6.tgz#d62dbb5679405d72c4737ec58600e9ddcf06d24c"
-  integrity sha512-GSmOT2EbHrINBf9SR7CDELwlJ8AENk3Qn7OikK4nFYAu3Ote2+JYNVvkpAEQm3/TLNEJFD/xZJjzyxg3KBWOzw==
+  version "1.0.7"
+  resolved "https://registry.yarnpkg.com/path-parse/-/path-parse-1.0.7.tgz#fbc114b60ca42b30d9daf5858e4bd68bbedb6735"
+  integrity sha512-LDJzPVEEEPR+y48z93A0Ed0yXb8pAByGWo/k5YYdYgpY2/2EsOsksJrq7lOHxryrVOn1ejG6oAp8ahvOIQD8sw==
 
 pathval@^1.1.0:
   version "1.1.0"
