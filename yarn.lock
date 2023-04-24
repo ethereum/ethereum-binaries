@@ -1110,10 +1110,10 @@ ethjs-util@0.1.6:
     is-hex-prefixed "1.0.0"
     strip-hex-prefix "1.0.0"
 
-ethpkg@^0.9.0:
-  version "0.9.0"
-  resolved "https://registry.yarnpkg.com/ethpkg/-/ethpkg-0.9.0.tgz#0420f529f01b74372c2cab083aa21ea231c95289"
-  integrity sha512-4n3z4epdBQK1iHFH5nXZ3v4vx65wyeOYidSj4K+2nwn3wpJZWRABv9e5S/hRku1gECitHMtIvn60Tm0lPak3qA==
+ethpkg@^0.10.0:
+  version "0.10.0"
+  resolved "https://registry.yarnpkg.com/ethpkg/-/ethpkg-0.10.0.tgz#d1cdebc75dd3dd2987a00f19f9b4f365895d9468"
+  integrity sha512-3gi0tuAIfeNlRpCV6kV1djEMrc8FBiveDZAlwtQha28dqz2iX7OaN/A81q/ry92g2v2jaf3YXT4gT3x3c4uj4w==
   dependencies:
     "@ianu/sdk" "^1.0.1"
     "@octokit/rest" "^17.5.1"
@@ -2802,9 +2802,9 @@ xmlhttprequest@1.8.0:
   integrity sha1-Z/4HXFwk/vOfnWX197f+dRcZaPw=
 
 y18n@^4.0.0:
-  version "4.0.0"
-  resolved "https://registry.yarnpkg.com/y18n/-/y18n-4.0.0.tgz#95ef94f85ecc81d007c264e190a120f0a3c8566b"
-  integrity sha512-r9S/ZyXu/Xu9q1tYlpsLIsa3EeLXXk0VwlxqTcFRfg9EhMW+17kbt9G0NrgCmhGb5vT2hyhJZLfDGx+7+5Uj/w==
+  version "4.0.1"
+  resolved "https://registry.yarnpkg.com/y18n/-/y18n-4.0.1.tgz#8db2b83c31c5d75099bb890b23f3094891e247d4"
+  integrity sha512-wNcy4NvjMYL8gogWWYAO7ZFWFfHcbdbE57tZO8e4cbpj8tfUcwrwqSl3ad8HxpYWCdXcJUCeKKZS62Av1affwQ==
 
 yargs-parser@13.1.2, yargs-parser@^13.1.2:
   version "13.1.2"
